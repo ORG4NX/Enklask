@@ -44,6 +44,11 @@ class Topic(Base):
     apprise_urls: Mapped[str] = mapped_column(Text, default="")
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # When the topic page was last opened. Listings first seen after this
+    # moment carry a "Nouveau" badge on the next visit.
+    last_viewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When this topic's searches were last polled (scheduler or manual).
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     searches: Mapped[list["SavedSearch"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan"

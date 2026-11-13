@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -17,9 +19,10 @@ from ..api.routes import _query_listings
 from ..config import get_settings, save_settings
 from ..db import get_session
 from ..enums import ListingStatus, Source
+from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
 from ..poller import poll_once, poll_search, poll_topic
-from ..scheduler import reschedule_poll
+from ..scheduler import next_poll_at, reschedule_poll
 from ..sources.registry import get_enabled_sources
 
 logger = logging.getLogger(__name__)
@@ -102,6 +105,15 @@ CONDITION_LABELS = {
     "for_parts": "Pour pièces",
 }
 
+# Listing statuses as shown in the topic filter bar (the enum values are
+# English identifiers, the UI is French).
+STATUS_LABELS = {
+    "new": "Nouvelles",
+    "seen": "Déjà vues",
+    "liked": "Suivies",
+    "hidden": "Masquées",
+}
+
 SORT_LABELS = {
     "relevance": "Pertinence",
     "recent": "Plus récentes",
@@ -124,6 +136,7 @@ def _filter_context() -> dict:
     return {
         "sources": [s.value for s in Source],
         "statuses": [s.value for s in ListingStatus],
+        "status_labels": STATUS_LABELS,
         "shipping_labels": SHIPPING_LABELS,
         "condition_labels": CONDITION_LABELS,
         "sort_labels": SORT_LABELS,
@@ -157,6 +170,28 @@ def _parse_filters(params) -> dict:
 _PAGE_SIZE = 60
 
 
+def _utcnow_naive() -> datetime:
+    """Now in UTC without tzinfo, matching how SQLite hands DateTime back."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _parse_since(request: Request) -> datetime | None:
+    """The "new since" cursor for the Nouveau badge.
+
+    The topic page sends it back on every partial request, as an ``X-Since``
+    header from the filter form/refresh button (kept out of the pushed URL) or
+    as a ``since`` query parameter on the "load more" link.
+    """
+    raw = request.headers.get("x-since") or request.query_params.get("since") or ""
+    try:
+        value = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
 def _listings_page(
     session: Session,
     *,
@@ -164,6 +199,7 @@ def _listings_page(
     active_tags: list[str],
     filters: dict,
     offset: int = 0,
+    since: datetime | None = None,
 ) -> dict:
     """Fetch one page of listings plus the htmx query string for the next page.
 
@@ -189,12 +225,15 @@ def _listings_page(
     for key, value in filters.items():
         if value not in (None, ""):
             params.append((key, str(value)))
+    if since is not None:
+        params.append(("since", since.isoformat()))
     params.append(("offset", str(offset + _PAGE_SIZE)))
 
     return {
         "listings": rows,
         "has_more": has_more,
         "next_query": urlencode(params),
+        "new_since": since,
     }
 
 
@@ -242,6 +281,7 @@ def _topic_stat(session: Session, topic: Topic) -> dict:
         "new_count": new_count,
         "search_count": len(topic.searches),
         "thumbnails": thumbnails,
+        "refresh": _refresh_view(jobs.get(topic_key(topic.id)), topic.last_polled_at),
     }
 
 
@@ -274,6 +314,18 @@ def _source_statuses(session: Session) -> list[dict]:
     return statuses
 
 
+def _home_refresh_view(session: Session) -> dict:
+    """Status line for the home "tout actualiser" button: the global job if
+    any, else the most recent topic poll (the scheduler's), plus the next run."""
+    last = session.scalar(select(func.max(Topic.last_polled_at)))
+    view = _refresh_view(jobs.get(ALL_KEY), last)
+    nxt = next_poll_at()
+    if nxt is not None and not view["running"]:
+        mins = max(int((nxt - datetime.now(timezone.utc)).total_seconds() // 60), 0)
+        view["next_in"] = "moins d'une minute" if mins < 1 else f"{mins} min"
+    return view
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, session: Session = Depends(get_session)):
     topics = list(session.scalars(select(Topic).order_by(Topic.position, Topic.id)))
@@ -281,6 +333,17 @@ def home(request: Request, session: Session = Depends(get_session)):
         "request": request,
         "topic_stats": [_topic_stat(session, t) for t in topics],
         "source_status": _source_statuses(session),
+        "refresh": _home_refresh_view(session),
+    })
+
+
+@router.get("/partials/topics", response_class=HTMLResponse)
+def topics_partial(request: Request, session: Session = Depends(get_session)):
+    """The home topic grid alone, re-fetched once a global refresh finishes."""
+    topics = list(session.scalars(select(Topic).order_by(Topic.position, Topic.id)))
+    return templates.TemplateResponse("_topic_grid.html", {
+        "request": request,
+        "topic_stats": [_topic_stat(session, t) for t in topics],
     })
 
 
@@ -322,7 +385,26 @@ def topic_detail(
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
 
+    filters = _parse_filters(request.query_params)
+    active_tags = request.query_params.getlist("tag")
+
+    # The filter bar re-requests this same URL over htmx (so the address bar
+    # stays shareable); only the grid is needed then, and the visit cursor
+    # must not move or the "Nouveau" badges would vanish on the first filter.
+    if request.headers.get("hx-request"):
+        page = _listings_page(
+            session, topic_id=topic.id, active_tags=active_tags,
+            filters=filters, since=_parse_since(request),
+        )
+        return templates.TemplateResponse(
+            "_grid.html", {"request": request, "topic": topic, **page}
+        )
+
     # Opening a topic clears its "nouvelles" badge: new listings become seen.
+    # Listings that appeared since the previous visit still get a "Nouveau"
+    # badge on this one, so the information isn't lost the moment it's read.
+    new_since = topic.last_viewed_at
+    topic.last_viewed_at = _utcnow_naive()
     session.execute(
         update(Listing)
         .where(
@@ -337,11 +419,9 @@ def topic_detail(
     )
     session.commit()
 
-    filters = _parse_filters(request.query_params)
-    active_tags = request.query_params.getlist("tag")
-
     page = _listings_page(
-        session, topic_id=topic.id, active_tags=active_tags, filters=filters
+        session, topic_id=topic.id, active_tags=active_tags, filters=filters,
+        since=new_since,
     )
 
     listing_count = session.scalar(
@@ -359,6 +439,7 @@ def topic_detail(
         "request": request,
         "topic": topic,
         "topics": all_topics,
+        "refresh": _refresh_view(jobs.get(topic_key(topic.id)), topic.last_polled_at),
         "selected": filters,
         "active_tags": active_tags,
         "listing_count": listing_count,
@@ -393,6 +474,9 @@ def topic_settings(slug: str, request: Request, session: Session = Depends(get_s
         "request": request,
         "topic": topic,
         "search_counts": search_counts,
+        "search_refresh": {
+            s.id: _refresh_view(jobs.get(search_key(s.id))) for s in topic.searches
+        },
         "condition_labels": CONDITION_LABELS,
     })
 
@@ -635,6 +719,7 @@ def listings_partial(request: Request, session: Session = Depends(get_session)):
         active_tags=active_tags,
         filters=filters,
         offset=offset,
+        since=_parse_since(request),
     )
     # First page (offset 0) replaces the whole grid; later pages append items.
     template = "_grid_items.html" if offset else "_grid.html"
@@ -691,13 +776,105 @@ def update_status(
 # ---------------------------------------------------------------------------
 
 
+# A refresh runs in the background (see app.jobs). POST starts the job and
+# answers at once with the control in its "running" state; that fragment polls
+# the matching GET .../status until the job is done, which then returns the
+# final state and fires ``refresh-done`` + a toast through HX-Trigger so the
+# page reloads what it displays.
+
+_SOURCE_NAMES = {s.value: s.value.capitalize() for s in Source}
+_SOURCE_NAMES["ebay"] = "eBay"
+
+
+def _refresh_view(job: Job | None, last_polled_at: datetime | None = None) -> dict:
+    """What a refresh control shows: state, one-line message, tone, 'ago'."""
+    if job is None:
+        if last_polled_at is None:
+            return {"state": "idle", "running": False, "level": "muted",
+                    "message": "", "detail": "", "ago": ""}
+        return {
+            "state": "idle", "running": False, "level": "muted",
+            "message": "Actualisé", "detail": "", "ago": _timeago(last_polled_at),
+        }
+    if job.running:
+        return {"state": "running", "running": True, "level": "muted",
+                "message": "Actualisation en cours…", "detail": "", "ago": ""}
+    if job.error:
+        return {
+            "state": "done", "running": False, "level": "error",
+            "message": "Échec de l'actualisation", "detail": job.error,
+            "ago": _timeago(job.finished_at),
+        }
+    n = job.new_count
+    message = (
+        "Aucune nouvelle annonce" if n == 0
+        else f"{n} nouvelle{'s' if n > 1 else ''} annonce{'s' if n > 1 else ''}"
+    )
+    errors = job.errors
+    detail = " · ".join(
+        f"{_SOURCE_NAMES.get(src, src)} : {msg}" for src, msg in errors.items()
+    )
+    if errors:
+        names = ", ".join(_SOURCE_NAMES.get(s, s) for s in errors)
+        message += f" · {names} en erreur"
+    return {
+        "state": "done", "running": False, "level": "warn" if errors else "ok",
+        "message": message, "detail": detail, "ago": _timeago(job.finished_at),
+    }
+
+
+def _done_headers(job: Job | None, view: dict) -> dict[str, str]:
+    """HX-Trigger for a finished job: ``refresh-done`` (pages reload their data)
+    and ``toast`` (a transient message with the outcome)."""
+    if job is None or job.running:
+        return {}
+    toast_message = view["message"]
+    if view["detail"]:
+        toast_message += f" — {view['detail']}"
+    return {
+        "HX-Trigger": json.dumps({
+            "refresh-done": {"key": job.key},
+            "toast": {"message": toast_message[:300], "level": view["level"]},
+        })
+    }
+
+
+def _home_refresh_response(request: Request, session: Session):
+    view = _home_refresh_view(session)
+    headers = _done_headers(jobs.get(ALL_KEY), view)
+    return templates.TemplateResponse(
+        "_home_refresh.html", {"request": request, "refresh": view}, headers=headers
+    )
+
+
 @router.post("/refresh", response_class=HTMLResponse)
 def refresh(request: Request, session: Session = Depends(get_session)):
-    poll_once()
-    page = _listings_page(
-        session, topic_id=None, active_tags=[], filters=_parse_filters({})
+    """Start a poll of every topic (what the scheduler does) in the background."""
+    jobs.start(ALL_KEY, poll_once)
+    return _home_refresh_response(request, session)
+
+
+@router.get("/refresh/status", response_class=HTMLResponse)
+def refresh_status(request: Request, session: Session = Depends(get_session)):
+    return _home_refresh_response(request, session)
+
+
+def _topic_refresh_response(request: Request, session: Session, topic: Topic):
+    session.expire_all()  # see what the poller committed on its own sessions
+    job = jobs.get(topic_key(topic.id))
+    view = _refresh_view(job, topic.last_polled_at)
+    headers = _done_headers(job, view)
+    if request.query_params.get("view") == "card":
+        return templates.TemplateResponse(
+            "_topic_card.html",
+            {"request": request, "ts": _topic_stat(session, topic)},
+            headers=headers,
+        )
+    return templates.TemplateResponse(
+        "_refresh_status.html",
+        {"request": request, "topic": topic, "refresh": view},
+        headers=headers,
     )
-    return templates.TemplateResponse("_grid.html", {"request": request, **page})
 
 
 @router.post("/refresh/{slug}", response_class=HTMLResponse)
@@ -705,32 +882,24 @@ def refresh_single(slug: str, request: Request, session: Session = Depends(get_s
     topic = session.scalar(select(Topic).where(Topic.slug == slug))
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
-    poll_topic(topic.id)
-    session.expire_all()  # see listings the poller committed on other sessions
-
-    # From the home topic list -> re-render just the topic card with fresh stats.
-    if request.query_params.get("view") == "card":
-        return templates.TemplateResponse(
-            "_topic_card.html", {"request": request, "ts": _topic_stat(session, topic)}
-        )
-
-    filters = _parse_filters(request.query_params)
-    active_tags = request.query_params.getlist("tag")
-    page = _listings_page(
-        session, topic_id=topic.id, active_tags=active_tags, filters=filters
-    )
-    return templates.TemplateResponse("_grid.html", {"request": request, **page})
+    topic_id = topic.id
+    jobs.start(topic_key(topic_id), lambda: poll_topic(topic_id))
+    return _topic_refresh_response(request, session, topic)
 
 
-@router.post("/t/{slug}/searches/{search_id}/refresh", response_class=HTMLResponse)
-def refresh_search(
-    slug: str, search_id: int, request: Request,
-    session: Session = Depends(get_session),
+@router.get("/refresh/{slug}/status", response_class=HTMLResponse)
+def refresh_single_status(
+    slug: str, request: Request, session: Session = Depends(get_session)
 ):
     topic = session.scalar(select(Topic).where(Topic.slug == slug))
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
-    poll_search(search_id)
+    return _topic_refresh_response(request, session, topic)
+
+
+def _search_row_response(
+    request: Request, session: Session, topic: Topic, search_id: int
+):
     session.expire_all()
     search = session.get(SavedSearch, search_id)
     if search is None:
@@ -743,13 +912,41 @@ def refresh_search(
             ListingTopic.is_available.is_(True),
         )
     )
+    job = jobs.get(search_key(search_id))
+    view = _refresh_view(job)
+    headers = _done_headers(job, view)
     return templates.TemplateResponse(
         "_search_row.html",
         {
             "request": request, "search": search, "topic": topic,
             "count": count, "condition_labels": CONDITION_LABELS,
+            "refresh": view,
         },
+        headers=headers,
     )
+
+
+@router.post("/t/{slug}/searches/{search_id}/refresh", response_class=HTMLResponse)
+def refresh_search(
+    slug: str, search_id: int, request: Request,
+    session: Session = Depends(get_session),
+):
+    topic = session.scalar(select(Topic).where(Topic.slug == slug))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    jobs.start(search_key(search_id), lambda: poll_search(search_id))
+    return _search_row_response(request, session, topic, search_id)
+
+
+@router.get("/t/{slug}/searches/{search_id}/refresh/status", response_class=HTMLResponse)
+def refresh_search_status(
+    slug: str, search_id: int, request: Request,
+    session: Session = Depends(get_session),
+):
+    topic = session.scalar(select(Topic).where(Topic.slug == slug))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return _search_row_response(request, session, topic, search_id)
 
 
 # ---------------------------------------------------------------------------
@@ -854,50 +1051,93 @@ def liked_partial(request: Request, session: Session = Depends(get_session)):
 def settings_page(request: Request):
     settings = get_settings()
     return templates.TemplateResponse(
-        "settings.html", {"request": request, "settings": settings}
+        "settings.html",
+        {
+            "request": request,
+            "settings": settings,
+            "saved": request.query_params.get("saved") == "1",
+        },
     )
+
+
+# (field, label, parser, min, max) for the numeric settings. Each one is
+# validated with a readable message instead of letting int()/float() raise 500.
+_SETTINGS_INT_FIELDS = [
+    ("poll_interval_minutes", "L'intervalle", 1, None),
+    ("notify_max_per_poll", "Le maximum de notifications par poll", 1, None),
+]
+_SETTINGS_FLOAT_FIELDS = [
+    ("home_lat", "La latitude", -90.0, 90.0),
+    ("home_lon", "La longitude", -180.0, 180.0),
+]
+
+
+def _validate_settings_form(form) -> tuple[dict, list[str]]:
+    """Turn the settings form into a dict of updates, collecting errors."""
+    updates: dict = {}
+    errors: list[str] = []
+
+    for f in ("enable_ebay", "enable_vinted", "enable_leboncoin", "notify_on_first_run"):
+        updates[f] = f in form
+
+    for f, label, lo, hi in _SETTINGS_INT_FIELDS:
+        raw = (form.get(f) or "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            errors.append(f"{label} doit être un nombre entier.")
+            continue
+        if lo is not None and value < lo:
+            errors.append(f"{label} doit être au moins {lo}.")
+            continue
+        updates[f] = value
+
+    for f, label, lo, hi in _SETTINGS_FLOAT_FIELDS:
+        raw = (form.get(f) or "").strip().replace(",", ".")
+        if not raw:
+            continue
+        try:
+            value = float(raw)
+        except ValueError:
+            errors.append(f"{label} doit être un nombre (ex. 48.1173).")
+            continue
+        if not (lo <= value <= hi):
+            errors.append(f"{label} doit être comprise entre {lo:g} et {hi:g}.")
+            continue
+        updates[f] = value
+
+    for f in (
+        "ebay_client_id", "ebay_client_secret", "ebay_marketplace_id",
+        "vinted_base_url", "leboncoin_base_url", "cookies_file", "apprise_urls",
+    ):
+        updates[f] = (form.get(f) or "").strip()
+
+    return updates, errors
 
 
 @router.post("/settings", response_class=HTMLResponse)
 async def settings_save(request: Request):
     form = await request.form()
-    updates = {}
+    updates, errors = _validate_settings_form(form)
 
-    bool_fields = [
-        "enable_ebay", "enable_vinted", "enable_leboncoin",
-        "notify_on_first_run",
-    ]
-    int_fields = ["poll_interval_minutes", "notify_max_per_poll"]
-    float_fields = ["home_lat", "home_lon"]
-    str_fields = [
-        "ebay_client_id", "ebay_client_secret", "ebay_marketplace_id",
-        "vinted_base_url", "leboncoin_base_url",
-        "cookies_file",
-        "apprise_urls",
-    ]
+    if errors:
+        # Re-show the form with what the user typed so nothing is lost.
+        current = get_settings().model_dump()
+        current.update({k: v for k, v in form.items() if k in current})
+        current.update({k: v for k, v in updates.items() if isinstance(v, bool)})
+        return templates.TemplateResponse(
+            "settings.html",
+            {"request": request, "settings": current, "errors": errors},
+            status_code=400,
+        )
 
-    for f in bool_fields:
-        updates[f] = f in form
-    for f in int_fields:
-        val = form.get(f, "")
-        if val:
-            updates[f] = int(val)
-    for f in float_fields:
-        val = form.get(f, "")
-        if val:
-            updates[f] = float(val)
-    for f in str_fields:
-        val = form.get(f, "")
-        updates[f] = val
-
-    old = get_settings()
-    old_interval = old.poll_interval_minutes
+    old_interval = get_settings().poll_interval_minutes
     save_settings(updates)
     new = get_settings()
     if new.poll_interval_minutes != old_interval:
         reschedule_poll(new.poll_interval_minutes)
 
-    return templates.TemplateResponse(
-        "settings.html",
-        {"request": request, "settings": new, "saved": True},
-    )
+    # Redirect so a browser refresh doesn't re-submit the form.
+    return RedirectResponse("/settings?saved=1", status_code=303)

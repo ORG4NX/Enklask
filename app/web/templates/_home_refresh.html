@@ -1,0 +1,31 @@
+{# Home: poll every topic now + when it last/next happens. #}
+<div id="home-refresh" class="flex items-center gap-3 min-w-0 ml-auto">
+  <span class="text-xs truncate max-w-[18rem] hidden sm:inline
+               {% if refresh.level == 'ok' %}text-emerald-600
+               {% elif refresh.level == 'warn' %}text-amber-600
+               {% elif refresh.level == 'error' %}text-red-600
+               {% else %}text-gray-400{% endif %}"
+        {% if refresh.detail %}title="{{ refresh.detail }}"{% endif %}
+        role="status" aria-live="polite">
+    {% if refresh.message %}{{ refresh.message }}{% if refresh.ago %} <span class="text-gray-400">· {{ refresh.ago }}</span>{% endif %}{% endif %}
+    {% if refresh.next_in %}<span class="text-gray-400">{% if refresh.message %} · {% endif %}prochain poll dans {{ refresh.next_in }}</span>{% endif %}
+  </span>
+
+  <button type="button"
+          class="border border-warm-200 bg-white hover:border-brand/30 hover:text-brand disabled:opacity-60 disabled:cursor-wait text-gray-600 text-sm font-semibold px-3.5 py-1.5 rounded-xl transition-colors inline-flex items-center gap-1.5 shrink-0"
+          hx-post="/refresh" hx-target="#home-refresh" hx-swap="outerHTML"
+          {% if refresh.running %}disabled aria-busy="true"{% endif %}>
+    {% if refresh.running %}
+    <svg class="w-4 h-4 animate-spin text-brand" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg>
+    Actualisation…
+    {% else %}
+    <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.6 8a5.6 5.6 0 11-1.7-4M13.6 2.2v3.2h-3.2"/></svg>
+    Tout actualiser
+    {% endif %}
+  </button>
+
+  {% if refresh.running %}
+  <span class="hidden" hx-get="/refresh/status" hx-trigger="load delay:2000ms"
+        hx-target="#home-refresh" hx-swap="outerHTML"></span>
+  {% endif %}
+</div>

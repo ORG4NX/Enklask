@@ -16,7 +16,21 @@ def run_migration() -> None:
     _ensure_saved_search_columns()
     _ensure_listing_topic_columns()
     _ensure_listing_columns()
+    _ensure_topic_columns()
     _drop_topic_columns()
+
+
+def _ensure_topic_columns() -> None:
+    """Idempotently add columns introduced after the multi-topic migration."""
+    inspector = inspect(engine)
+    if "topics" not in set(inspector.get_table_names()):
+        return
+    columns = {c["name"] for c in inspector.get_columns("topics")}
+    for column in ("last_viewed_at", "last_polled_at"):
+        if column not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE topics ADD COLUMN {column} DATETIME"))
+            logger.info("Added '%s' column to topics.", column)
 
 
 def _ensure_listing_columns() -> None:

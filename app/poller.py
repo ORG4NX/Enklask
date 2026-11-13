@@ -7,8 +7,9 @@ import random
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from .db import session_scope
 from .dedup import upsert_listing
@@ -131,8 +132,19 @@ def poll_search(search_id: int) -> PollResult:
     result.new_count = new_count
     result.seen_count = seen_count
     result.errors.update(errors)
+    _stamp_polled(topic.id)
     _notify(topic, new_items, is_cold_start)
     return result
+
+
+def _stamp_polled(topic_id: int) -> None:
+    """Record when a topic was last polled (shown as "actualisé il y a …")."""
+    with session_scope() as session:
+        session.execute(
+            update(Topic)
+            .where(Topic.id == topic_id)
+            .values(last_polled_at=datetime.now(timezone.utc).replace(tzinfo=None))
+        )
 
 
 def _poll_topic(topic, sources, is_cold_start: bool) -> PollResult:
@@ -181,6 +193,7 @@ def _poll_topic(topic, sources, is_cold_start: bool) -> PollResult:
         if successful[source_name] == attempt_count:
             _reconcile_availability(topic.id, source_name, ids)
 
+    _stamp_polled(topic.id)
     _notify(topic, new_items, is_cold_start)
     return result
 

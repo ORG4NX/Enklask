@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from .config import get_settings
+from .jobs import ALL_KEY, jobs
 from .poller import poll_once
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,19 @@ def reschedule_poll(interval_minutes: int) -> None:
     logger.info("Scheduler rescheduled: polling every %d min", interval_minutes)
 
 
+def next_poll_at():
+    """When the scheduler will next poll (aware datetime), or None."""
+    if _scheduler is None:
+        return None
+    job = _scheduler.get_job("poll_sources")
+    return job.next_run_time if job is not None else None
+
+
 def _safe_poll() -> None:
     try:
-        poll_once()
+        # Registered as a job so the dashboard shows the automatic poll as
+        # "en cours" too, and a manual "tout actualiser" won't double it.
+        if jobs.run_blocking(ALL_KEY, poll_once) is None:
+            logger.info("Scheduled poll skipped: a global refresh is already running")
     except Exception:  # pragma: no cover - scheduler must never die
         logger.exception("Scheduled poll failed")

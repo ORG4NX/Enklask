@@ -21,34 +21,52 @@
     {% endif %}
   </div>
 
-  <span class="text-xs font-semibold text-gray-500 shrink-0 whitespace-nowrap">
+  {% set rf = refresh if refresh is defined and refresh else none %}
+  <span class="text-xs font-semibold text-gray-500 shrink-0 whitespace-nowrap text-right">
     {{ count }} annonce{{ 's' if count != 1 else '' }}
+    {% if rf and rf.message %}
+    <span class="block font-medium text-[10px] max-w-[10rem] truncate
+                 {% if rf.level == 'ok' %}text-emerald-600{% elif rf.level == 'warn' %}text-amber-600{% elif rf.level == 'error' %}text-red-600{% else %}text-gray-400{% endif %}"
+          {% if rf.detail %}title="{{ rf.detail }}"{% endif %}>{{ rf.message }}{% if rf.ago %} · {{ rf.ago }}{% endif %}</span>
+    {% endif %}
   </span>
 
-  <button hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}/refresh"
+  <button type="button"
+          hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}/refresh"
           hx-target="#search-row-{{ search.id }}"
           hx-swap="outerHTML"
-          title="Actualiser cette recherche"
-          class="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-brand-light transition">
-    <svg class="htmx-hide-on-request w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M13.6 8a5.6 5.6 0 11-1.7-4M13.6 2.2v3.2h-3.2"/>
-    </svg>
-    <svg class="htmx-indicator w-4 h-4 animate-spin text-brand" viewBox="0 0 24 24" fill="none">
+          title="Actualiser cette recherche" aria-label="Actualiser la recherche {{ search.name }}"
+          {% if rf and rf.running %}disabled aria-busy="true"{% endif %}
+          class="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-brand-light disabled:cursor-wait transition">
+    {% if rf and rf.running %}
+    <svg class="w-4 h-4 animate-spin text-brand" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" stroke-dasharray="42 16" stroke-linecap="round"/>
     </svg>
+    {% else %}
+    <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M13.6 8a5.6 5.6 0 11-1.7-4M13.6 2.2v3.2h-3.2"/>
+    </svg>
+    {% endif %}
   </button>
+  {% if rf and rf.running %}
+  <span class="hidden" hx-get="/t/{{ topic.slug }}/searches/{{ search.id }}/refresh/status" hx-trigger="load delay:1500ms"
+        hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML"></span>
+  {% endif %}
 
   <form method="post" action="/t/{{ topic.slug }}/searches/{{ search.id }}/toggle" class="shrink-0">
-    <button type="submit" title="{% if search.enabled %}Désactiver{% else %}Activer{% endif %}">
-      <input type="checkbox" {% if search.enabled %}checked{% endif %} class="sr-only peer" tabindex="-1" />
+    <button type="submit" role="switch" aria-checked="{{ 'true' if search.enabled else 'false' }}"
+            title="{% if search.enabled %}Désactiver{% else %}Activer{% endif %}"
+            aria-label="{% if search.enabled %}Désactiver{% else %}Activer{% endif %} la recherche {{ search.name }}">
+      <input type="checkbox" {% if search.enabled %}checked{% endif %} class="sr-only peer" tabindex="-1" aria-hidden="true" />
       <div class="toggle-track {% if search.enabled %}bg-brand{% endif %}"></div>
     </button>
   </form>
 
   <form method="post" action="/t/{{ topic.slug }}/searches/{{ search.id }}/delete" class="shrink-0"
         onsubmit="return confirm('Supprimer cette recherche ?')">
-    <button type="submit" class="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+    <button type="submit" title="Supprimer" aria-label="Supprimer la recherche {{ search.name }}"
+            class="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
         <line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/>
       </svg>
     </button>

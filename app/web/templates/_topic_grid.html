@@ -1,0 +1,15 @@
+{% for ts in topic_stats %}
+{% include "_topic_card.html" %}
+{% endfor %}
+
+<!-- Create topic card -->
+<button onclick="document.getElementById('new-topic-modal').classList.remove('hidden')"
+        class="bg-white rounded-2xl border-2 border-dashed border-warm-200 hover:border-brand/40 hover:bg-brand-light/30
+               flex flex-col items-center justify-center gap-3 py-12 transition-all duration-200 cursor-pointer group min-h-[200px]">
+  <div class="w-12 h-12 rounded-full bg-warm-100 group-hover:bg-brand-light flex items-center justify-center transition-colors">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400 group-hover:text-brand transition-colors" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  </div>
+  <span class="text-sm font-medium text-gray-400 group-hover:text-brand transition-colors">Nouveau topic</span>
+</button>

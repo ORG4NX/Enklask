@@ -8,7 +8,7 @@
 <div id="watch-{{ listing.id }}"
      class="listing-card bg-white rounded-2xl border border-warm-200 p-3 flex items-center gap-3 sm:gap-4">
 
-  <button type="button" onclick="openPreview(this)" title="Aperçu de l'annonce"
+  <button type="button" onclick="openPreview(this)" title="Aperçu de l'annonce" aria-label="Aperçu de l'annonce"
           class="shrink-0 block w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-warm-100 cursor-zoom-in">
     {% if listing.thumbnail %}
     <img src="{{ listing.thumbnail }}" alt="" loading="lazy" class="w-full h-full object-cover" />
@@ -50,11 +50,11 @@
   </div>
 
   <div class="shrink-0 flex items-center gap-1.5">
-    <button type="button" onclick="openPreview(this)" title="Aperçu"
+    <button type="button" onclick="openPreview(this)" title="Aperçu" aria-label="Aperçu de l'annonce"
             class="w-8 h-8 flex items-center justify-center rounded-lg border border-warm-200 text-gray-500 hover:text-brand hover:border-brand/30 transition">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg>
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg>
     </button>
-    <button title="Ne plus suivre"
+    <button type="button" title="Ne plus suivre" aria-label="Ne plus suivre cette annonce"
             class="w-8 h-8 flex items-center justify-center rounded-lg border border-brand/30 bg-brand-light hover:bg-brand/10"
             hx-post="/partials/listings/{{ listing.id }}/status"
             hx-vals='{"value": "liked", "from": "liked"}'

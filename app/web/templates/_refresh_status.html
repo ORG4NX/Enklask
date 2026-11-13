@@ -1,0 +1,36 @@
+{# Topic page refresh control: status line + button. Swapped as a whole by the
+   POST /refresh/<slug> response and by the status poller while a job runs. #}
+<div id="refresh-box" class="flex items-center gap-3 min-w-0">
+  {% if refresh.message %}
+  <span class="text-xs truncate max-w-[16rem] hidden sm:inline
+               {% if refresh.level == 'ok' %}text-emerald-600
+               {% elif refresh.level == 'warn' %}text-amber-600
+               {% elif refresh.level == 'error' %}text-red-600
+               {% else %}text-gray-400{% endif %}"
+        {% if refresh.detail %}title="{{ refresh.detail }}"{% endif %}
+        role="status" aria-live="polite">
+    {{ refresh.message }}{% if refresh.ago %} <span class="text-gray-400">· {{ refresh.ago }}</span>{% endif %}
+  </span>
+  {% endif %}
+
+  <button type="button"
+          class="bg-brand hover:bg-brand-dark disabled:opacity-60 disabled:cursor-wait text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 shrink-0"
+          hx-post="/refresh/{{ topic.slug }}"
+          hx-target="#refresh-box"
+          hx-swap="outerHTML"
+          {% if refresh.running %}disabled aria-busy="true"{% endif %}>
+    {% if refresh.running %}
+    <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg>
+    Actualisation…
+    {% else %}
+    <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.6 8a5.6 5.6 0 11-1.7-4M13.6 2.2v3.2h-3.2"/></svg>
+    Actualiser
+    {% endif %}
+  </button>
+
+  {% if refresh.running %}
+  {# Poll the job until it's finished; the final response fires refresh-done. #}
+  <span class="hidden" hx-get="/refresh/{{ topic.slug }}/status" hx-trigger="load delay:1500ms"
+        hx-target="#refresh-box" hx-swap="outerHTML"></span>
+  {% endif %}
+</div>

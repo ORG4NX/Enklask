@@ -4,16 +4,25 @@
 <div class="max-w-2xl mx-auto">
 
   <div class="flex items-center gap-3 mb-6">
-    <a href="/" class="p-2 -ml-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-warm-100 transition">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+    <a href="/" aria-label="Retour à l'accueil" class="p-2 -ml-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-warm-100 transition">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
     </a>
     <h1 class="text-xl font-bold text-gray-900">Paramètres</h1>
   </div>
 
   {% if saved %}
-  <div class="mb-5 px-4 py-3 rounded-2xl bg-emerald-50 text-emerald-700 text-sm font-medium flex items-center gap-2">
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm3.2 4.8a.6.6 0 00-.85-.85L7 8.3 5.65 6.95a.6.6 0 10-.85.85l1.8 1.8a.6.6 0 00.85 0l3.75-3.8z"/></svg>
+  <div class="mb-5 px-4 py-3 rounded-2xl bg-emerald-50 text-emerald-700 text-sm font-medium flex items-center gap-2" role="status">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm3.2 4.8a.6.6 0 00-.85-.85L7 8.3 5.65 6.95a.6.6 0 10-.85.85l1.8 1.8a.6.6 0 00.85 0l3.75-3.8z"/></svg>
     Configuration enregistrée
+  </div>
+  {% endif %}
+
+  {% if errors %}
+  <div class="mb-5 px-4 py-3 rounded-2xl bg-red-50 text-red-700 text-sm" role="alert">
+    <p class="font-semibold mb-1">La configuration n'a pas été enregistrée :</p>
+    <ul class="list-disc pl-5 space-y-0.5">
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
   </div>
   {% endif %}
 
@@ -34,12 +43,12 @@
           </label>
           <label class="flex flex-col gap-1.5">
             <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Latitude</span>
-            <input type="text" name="home_lat" id="home_lat" value="{{ settings.home_lat }}"
+            <input type="text" name="home_lat" id="home_lat" value="{{ settings.home_lat }}" inputmode="decimal" placeholder="48.1173"
                    class="bg-warm-50 border-0 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
           </label>
           <label class="flex flex-col gap-1.5">
             <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Longitude</span>
-            <input type="text" name="home_lon" id="home_lon" value="{{ settings.home_lon }}"
+            <input type="text" name="home_lon" id="home_lon" value="{{ settings.home_lon }}" inputmode="decimal" placeholder="-1.6778"
                    class="bg-warm-50 border-0 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
           </label>
         </div>
