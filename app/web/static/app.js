@@ -60,6 +60,13 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
 
   var SKIP = { topic_id: 1, sort: 1 };
 
+  var toggle = document.getElementById('filters-toggle');
+  var countEl = document.getElementById('filters-count');
+  if (toggle) toggle.addEventListener('click', function () {
+    var collapsed = bar.classList.toggle('filters-collapsed');
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  });
+
   function fields() { return bar.querySelectorAll('input[name], select[name]'); }
 
   function labelFor(el) {
@@ -105,6 +112,7 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
       });
       chips.appendChild(r);
     }
+    if (countEl) countEl.textContent = count ? '(' + count + ')' : '';
     var qs = params.toString();
     history.replaceState(null, '', bar.getAttribute('data-base-url') + (qs ? '?' + qs : ''));
   }

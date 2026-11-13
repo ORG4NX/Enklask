@@ -2,12 +2,12 @@
 {% block content %}
 
 <!-- Breadcrumb + header -->
-<div class="flex items-center justify-between mb-5">
-  <div class="flex items-center gap-3 min-w-0">
-    <a href="/" aria-label="Accueil" class="text-gray-400 hover:text-gray-600 transition shrink-0">
+<div class="flex items-center justify-between gap-3 mb-5">
+  <div class="flex flex-col items-start sm:flex-row sm:items-center gap-0 sm:gap-3 min-w-0">
+    <a href="/" aria-label="Accueil" class="hidden sm:block text-gray-400 hover:text-gray-600 transition shrink-0">
       <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
     </a>
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="text-gray-300 shrink-0"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" class="hidden sm:block text-gray-300 shrink-0"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg>
     <h1 class="text-xl font-bold text-gray-900 truncate">{{ topic.name }}</h1>
     <span class="text-sm font-medium text-gray-400 shrink-0 whitespace-nowrap">{{ listing_count }} annonce{{ 's' if listing_count != 1 else '' }}</span>
   </div>
@@ -36,16 +36,16 @@
 <!-- Tag filter bar -->
 {% set all_tags = topic.all_tags %}
 {% if all_tags %}
-<div class="flex items-center gap-2 flex-wrap mb-4 overflow-x-auto pb-1 scrollbar-hide">
+<div class="flex items-center gap-2 flex-nowrap mb-4 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
   <a href="/t/{{ topic.slug }}"
-     class="tag-pill px-3 py-1.5 rounded-full text-xs font-semibold transition-colors
+     class="tag-pill shrink-0 px-3 py-2 sm:py-1.5 rounded-full text-xs font-semibold transition-colors
             {% if not active_tags %}bg-gray-900 text-white{% else %}bg-warm-100 text-gray-500 hover:bg-warm-200{% endif %}">
     Tous
   </a>
   {% for tag in all_tags %}
   {% set is_active = tag in active_tags %}
   <a href="/t/{{ topic.slug }}?{% for t in active_tags %}{% if t != tag %}tag={{ t }}&{% endif %}{% endfor %}{% if not is_active %}tag={{ tag }}{% endif %}"
-     class="tag-pill px-3 py-1.5 rounded-full text-xs font-semibold transition-colors
+     class="tag-pill shrink-0 px-3 py-2 sm:py-1.5 rounded-full text-xs font-semibold transition-colors
             {% if is_active %}bg-gray-900 text-white{% else %}bg-warm-100 text-gray-500 hover:bg-warm-200{% endif %}">
     {{ tag }}
   </a>
@@ -53,9 +53,14 @@
 </div>
 {% endif %}
 
-<!-- Filters -->
+<!-- Filters (collapsible on mobile) -->
+<button type="button" id="filters-toggle" aria-expanded="false" aria-controls="filters"
+        class="sm:hidden w-full mb-2 flex items-center justify-between bg-white rounded-2xl border border-warm-200 px-4 py-3 text-sm font-semibold text-gray-700">
+  <span>Filtres <span id="filters-count" class="ml-1 text-brand"></span></span>
+  <svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5l3 3 3-3"/></svg>
+</button>
 <div id="filters" data-base-url="/t/{{ topic.slug }}"
-     class="bg-white rounded-2xl border border-warm-200 p-3 mb-2 flex flex-wrap gap-2 items-end"
+     class="filters-collapsed flex bg-white rounded-2xl border border-warm-200 p-3 mb-2 flex-wrap gap-2 items-end"
      hx-get="/partials/listings"
      hx-target="#grid"
      hx-swap="innerHTML"

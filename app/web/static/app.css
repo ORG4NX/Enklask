@@ -111,3 +111,12 @@ input:checked + .toggle-track::after {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
+
+/* Mobile: 16px form controls stop iOS Safari zooming on focus. */
+@media (max-width: 639px) {
+  #filters.filters-collapsed { display: none; }
+  input, select, textarea { font-size: 16px !important; }
+  #filters input, #filters select { min-height: 44px; }
+  #filters input, #filters select { flex: 1 1 45%; width: auto; min-width: 0; }
+  #filters input[name="keyword"] { flex-basis: 100%; }
+}
