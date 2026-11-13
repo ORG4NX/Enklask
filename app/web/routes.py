@@ -120,10 +120,19 @@ LIKED_SORT_LABELS = {
 }
 
 
+STATUS_LABELS = {
+    "new": "Nouvelles",
+    "seen": "Vues",
+    "liked": "Aimées",
+    "hidden": "Masquées",
+}
+
+
 def _filter_context() -> dict:
     return {
         "sources": [s.value for s in Source],
         "statuses": [s.value for s in ListingStatus],
+        "status_labels": STATUS_LABELS,
         "shipping_labels": SHIPPING_LABELS,
         "condition_labels": CONDITION_LABELS,
         "sort_labels": SORT_LABELS,
@@ -680,7 +689,10 @@ def update_status(
         )
 
     if listing.status == ListingStatus.HIDDEN.value:
-        return HTMLResponse("")
+        # Collapsed placeholder keeps the card id so "Annuler" can swap it back.
+        return templates.TemplateResponse(
+            "_hidden_placeholder.html", {"request": request, "listing": listing}
+        )
     return templates.TemplateResponse(
         "_card.html", {"request": request, "listing": listing}
     )

@@ -1,0 +1,11 @@
+<div id="card-{{ listing.id }}" class="hidden" aria-hidden="true"></div>
+<div id="toast" hx-swap-oob="true" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[120]" role="status" aria-live="polite">
+  <div class="flex items-center gap-3 bg-gray-900 text-white text-sm rounded-xl shadow-lg pl-4 pr-2 py-2"
+       data-auto-dismiss="6000">
+    <span>Annonce masquée</span>
+    <button type="button" class="font-semibold text-white underline px-2 py-1 rounded-lg hover:bg-white/10"
+            hx-post="/partials/listings/{{ listing.id }}/status"
+            hx-vals='{"value": "hidden"}'
+            hx-target="#card-{{ listing.id }}" hx-swap="outerHTML">Annuler</button>
+  </div>
+</div>

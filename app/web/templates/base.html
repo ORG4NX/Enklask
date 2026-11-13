@@ -50,7 +50,7 @@
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85-.017.016zm-5.242.156a5 5 0 110-10 5 5 0 010 10z"/>
           </svg>
-          <input type="text" name="q" value="{{ q|default('', true) }}"
+          <input type="search" name="q" aria-label="Rechercher" value="{{ q|default('', true) }}"
                  placeholder="Rechercher sur toutes les sources..."
                  class="w-full bg-warm-50 border border-warm-200 rounded-xl pl-9 pr-4 py-2 text-sm text-gray-700 placeholder-gray-400
                         focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand/30 transition" />
@@ -58,13 +58,13 @@
       </form>
 
       <div class="flex items-center gap-2 shrink-0">
-        <a href="/liked" title="Suivi des prix"
+        <a href="/liked" title="Suivi des prix" aria-label="Suivi des prix"
            class="p-2 rounded-xl text-gray-400 hover:text-brand hover:bg-warm-100 transition">
           <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M8 13.7l-1.1-1C3.6 9.8 1.5 7.9 1.5 5.6 1.5 3.7 3 2.2 4.9 2.2c1 0 2 .5 2.6 1.3.7-.8 1.6-1.3 2.6-1.3 1.9 0 3.4 1.5 3.4 3.4 0 2.3-2.1 4.2-5.4 7.1L8 13.7z"/>
           </svg>
         </a>
-        <a href="/settings"
+        <a href="/settings" title="Réglages" aria-label="Réglages"
            class="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-warm-100 transition">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
@@ -79,7 +79,7 @@
   </main>
 
   <!-- Listing preview modal (shared across pages) -->
-  <div id="preview-modal" class="hidden fixed inset-0 z-[110] flex items-center justify-center p-4">
+  <div id="preview-modal" role="dialog" aria-modal="true" aria-label="Aperçu de l'annonce" class="hidden fixed inset-0 z-[110] flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closePreview()"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row">
 
@@ -89,11 +89,11 @@
         <div id="pv-noimg" class="hidden text-gray-300">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
         </div>
-        <button id="pv-prev" type="button" onclick="previewNav(-1)"
+        <button id="pv-prev" type="button" onclick="previewNav(-1)" aria-label="Photo précédente"
                 class="hidden absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full bg-white/90 shadow hover:bg-white text-gray-700">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>
         </button>
-        <button id="pv-next" type="button" onclick="previewNav(1)"
+        <button id="pv-next" type="button" onclick="previewNav(1)" aria-label="Photo suivante"
                 class="hidden absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full bg-white/90 shadow hover:bg-white text-gray-700">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
         </button>
@@ -116,13 +116,15 @@
         </a>
       </div>
 
-      <button type="button" onclick="closePreview()" title="Fermer"
+      <button type="button" onclick="closePreview()" title="Fermer" aria-label="Fermer"
               class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-lg bg-white/90 backdrop-blur text-gray-500 hover:text-gray-800 shadow-sm">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
       </button>
     </div>
   </div>
 
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[120]" role="status" aria-live="polite"></div>
+  <script src="/static/app.js?v={{ css_v }}"></script>
   <script>
     var PV_SRC_STYLES = {
       ebay: 'bg-blue-50 text-blue-600', vinted: 'bg-teal-50 text-teal-600',
@@ -193,7 +195,7 @@
       }
 
       renderPreviewSlide();
-      document.getElementById('preview-modal').classList.remove('hidden');
+      uiOpenModal(document.getElementById('preview-modal'));
       document.body.style.overflow = 'hidden';
 
       // Lazily fetch the full description + photo gallery (cached server-side).
@@ -252,8 +254,7 @@
     }
 
     function closePreview() {
-      document.getElementById('preview-modal').classList.add('hidden');
-      document.body.style.overflow = '';
+      uiCloseModal(document.getElementById('preview-modal'));
     }
 
     document.addEventListener('keydown', function (e) {
