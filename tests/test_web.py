@@ -760,3 +760,24 @@ def test_images_are_upgraded_to_larger_cdn_variants():
     vinted = "https://images1.vinted.net/t/a/f800/1.jpeg?s=e"
     assert f(vinted) == vinted
     assert f(None) is None
+
+
+def test_grid_card_shows_the_first_photo_over_the_thumbnail(client, db_session):
+    topic, listing = _topic_with_listing(db_session)
+    listing.thumbnail = "https://images1.vinted.net/t/a/f800/1.jpeg"
+    listing.photos = ["https://images1.vinted.net/tc/a/1.jpeg", "https://images1.vinted.net/tc/b/2.jpeg"]
+    other = Listing(
+        source="leboncoin", source_id="2", title="Switch Lite", url="https://x/2",
+        thumbnail="https://img.leboncoin.fr/api/v1/i/x.jpg?rule=ad-thumb", photos=[],
+        first_seen=datetime(2026, 11, 13, 12, 0),
+    )
+    db_session.add(other)
+    db_session.flush()
+    db_session.add(ListingTopic(listing_id=other.id, topic_id=topic.id, tags=[]))
+    db_session.commit()
+
+    html = client.get(f"/t/{topic.slug}").text
+    assert '<img src="https://images1.vinted.net/tc/a/1.jpeg"' in html
+    assert '<img src="https://images1.vinted.net/t/a/f800/1.jpeg"' not in html
+    # No photos: the thumbnail is the fallback, upgraded to a larger variant.
+    assert '<img src="https://img.leboncoin.fr/api/v1/i/x.jpg?rule=ad-image"' in html
