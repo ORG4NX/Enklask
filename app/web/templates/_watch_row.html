@@ -78,6 +78,6 @@
     "posted": (listing.posted_at | timeago) if listing.posted_at else (("vu " ~ (listing.first_seen | timeago)) if listing.first_seen else ""),
     "description": listing.description or "",
     "url": listing.url,
-    "photos": listing.photos or ([listing.thumbnail] if listing.thumbnail else [])
+    "photos": (listing.photos or ([listing.thumbnail] if listing.thumbnail else [])) | map("img_size", "full") | list
   } | tojson }}</script>
 </div>

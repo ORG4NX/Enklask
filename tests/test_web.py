@@ -700,3 +700,63 @@ def test_icon_buttons_have_accessible_names():
 
         assert "aria-label=" in source, name
 
+
+
+def test_hiding_a_listing_offers_an_undo_that_restores_it(client, db_session):
+    import json as _json
+
+    _, listing = _topic_with_listing(db_session)
+    listing.status = "seen"
+    db_session.commit()
+    since = "2026-11-13T11:00:00"
+
+    resp = client.post(
+        f"/partials/listings/{listing.id}/status",
+        data={"value": "hidden", "since": since},
+    )
+    assert resp.status_code == 200
+    # An invisible placeholder keeps the card's spot in the grid.
+    assert f'id="card-{listing.id}"' in resp.text and 'class="hidden"' in resp.text
+    toast = _json.loads(resp.headers["HX-Trigger"])["toast"]
+    assert toast["message"] == "Annonce masquée"
+    action = toast["action"]
+    assert action["url"] == f"/partials/listings/{listing.id}/restore"
+    assert action["target"] == f"#card-{listing.id}"
+    assert action["values"] == {"value": "seen", "since": since}
+    db_session.refresh(listing)
+    assert listing.status == "hidden"
+
+    resp = client.post(action["url"], data=action["values"])
+    assert resp.status_code == 200
+    assert f'id="card-{listing.id}"' in resp.text
+    # The "Nouveau" cursor travelled with the undo, so the badge survives.
+    assert "Nouveau" in resp.text
+    db_session.refresh(listing)
+    assert listing.status == "seen"
+
+
+def test_restore_never_sets_hidden_and_leaves_visible_listings_alone(client, db_session):
+    _, listing = _topic_with_listing(db_session)
+    listing.status = "hidden"
+    db_session.commit()
+
+    client.post(f"/partials/listings/{listing.id}/restore", data={"value": "hidden"})
+    db_session.refresh(listing)
+    assert listing.status == "seen"
+
+    listing.status = "liked"
+    db_session.commit()
+    client.post(f"/partials/listings/{listing.id}/restore", data={"value": "new"})
+    db_session.refresh(listing)
+    assert listing.status == "liked"
+
+
+def test_images_are_upgraded_to_larger_cdn_variants():
+    f = web_routes._img_size
+    assert f("https://i.ebayimg.com/images/g/abc/s-l225.jpg").endswith("/s-l960.jpg")
+    assert f("https://i.ebayimg.com/images/g/abc/s-l500.webp", "full").endswith("/s-l1600.webp")
+    assert f("https://img.leboncoin.fr/api/v1/i/x.jpg?rule=ad-thumb").endswith("?rule=ad-image")
+    assert f("https://img.leboncoin.fr/api/v1/i/x.jpg?rule=ad-image", "full").endswith("?rule=ad-large")
+    vinted = "https://images1.vinted.net/t/a/f800/1.jpeg?s=e"
+    assert f(vinted) == vinted
+    assert f(None) is None

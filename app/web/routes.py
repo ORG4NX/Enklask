@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -77,6 +78,33 @@ def _preview_history(value) -> list:
 
 
 templates.env.filters["preview_history"] = _preview_history
+
+
+# Sources hand out small thumbnails (Leboncoin "ad-thumb" is ~200px, eBay
+# search cards s-l225/s-l500). Their CDNs serve larger variants of the same
+# image under a predictable URL, so upgrade at render time: existing listings
+# benefit without a re-poll. "card" suits a grid tile on a HiDPI screen,
+# "full" the preview modal.
+_EBAY_SIZE_RE = re.compile(r"/s-l\d+\.")
+_LBC_RULE_RE = re.compile(r"([?&]rule=)ad-[a-z]+")
+_IMG_SIZES = {
+    "card": {"ebay": "/s-l960.", "leboncoin": "ad-image"},
+    "full": {"ebay": "/s-l1600.", "leboncoin": "ad-large"},
+}
+
+
+def _img_size(url: str | None, size: str = "card") -> str | None:
+    if not url:
+        return url
+    wanted = _IMG_SIZES.get(size, _IMG_SIZES["card"])
+    if "ebayimg.com" in url:
+        return _EBAY_SIZE_RE.sub(wanted["ebay"], url, count=1)
+    if "img.leboncoin.fr" in url:
+        return _LBC_RULE_RE.sub(lambda m: m.group(1) + wanted["leboncoin"], url, count=1)
+    return url
+
+
+templates.env.filters["img_size"] = _img_size
 
 
 def _optional_float(value) -> float | None:
@@ -183,6 +211,10 @@ def _parse_since(request: Request) -> datetime | None:
     as a ``since`` query parameter on the "load more" link.
     """
     raw = request.headers.get("x-since") or request.query_params.get("since") or ""
+    return _since_from(raw)
+
+
+def _since_from(raw: str) -> datetime | None:
     try:
         value = datetime.fromisoformat(raw)
     except ValueError:
@@ -732,6 +764,7 @@ def update_status(
     request: Request,
     value: str = Form(...),
     from_: str = Form("", alias="from"),
+    since: str = Form(""),
     session: Session = Depends(get_session),
 ):
     try:
@@ -742,6 +775,7 @@ def update_status(
     if listing is None:
         raise HTTPException(status_code=404, detail="Listing not found")
 
+    previous_status = listing.status
     # Toggle: clicking the active status again clears it (e.g. like -> unlike).
     if listing.status == new_status.value:
         listing.status = ListingStatus.NEW.value
@@ -765,10 +799,54 @@ def update_status(
         )
 
     if listing.status == ListingStatus.HIDDEN.value:
-        return HTMLResponse("")
+        # Leave an invisible placeholder where the card was, so "Annuler" in the
+        # toast can put the card back at the same spot in the grid.
+        undo = {
+            "label": "Annuler",
+            "url": f"/partials/listings/{listing.id}/restore",
+            "target": f"#card-{listing.id}",
+            "values": {"value": previous_status, "since": since},
+        }
+        return HTMLResponse(
+            f'<div id="card-{listing.id}" class="hidden" aria-hidden="true"></div>',
+            headers={"HX-Trigger": json.dumps({
+                "toast": {"message": "Annonce masquée", "level": "muted", "action": undo},
+            })},
+        )
+    return _card_response(request, listing, since)
+
+
+def _card_response(request: Request, listing: Listing, since: str):
     return templates.TemplateResponse(
-        "_card.html", {"request": request, "listing": listing}
+        "_card.html",
+        {"request": request, "listing": listing, "new_since": _since_from(since)},
     )
+
+
+@router.post("/partials/listings/{listing_id}/restore", response_class=HTMLResponse)
+def restore_listing(
+    listing_id: int,
+    request: Request,
+    value: str = Form(ListingStatus.SEEN.value),
+    since: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Undo a hide: put back the status the listing had before and re-render
+    its card. A listing that is no longer hidden is left as it is."""
+    try:
+        previous = ListingStatus(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {value}")
+    if previous == ListingStatus.HIDDEN:
+        previous = ListingStatus.SEEN
+    listing = session.get(Listing, listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if listing.status == ListingStatus.HIDDEN.value:
+        listing.status = previous.value
+        session.commit()
+        session.refresh(listing)
+    return _card_response(request, listing, since)
 
 
 # ---------------------------------------------------------------------------

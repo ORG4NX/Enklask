@@ -26,13 +26,13 @@
   </button>
 </div>
 
-<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
   {% for r in results %}
   <div class="listing-card relative bg-white rounded-2xl border border-warm-200 overflow-hidden flex flex-col">
     <button type="button" onclick="openPreview(this)" title="Aperçu de l'annonce" aria-label="Aperçu de l'annonce"
             class="block w-full bg-warm-100 aspect-[4/3] overflow-hidden relative group cursor-zoom-in">
       {% if r.thumbnail %}
-      <img src="{{ r.thumbnail }}" alt="" loading="lazy"
+      <img src="{{ r.thumbnail | img_size }}" alt="" loading="lazy"
            class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
       {% else %}
       <div class="w-full h-full flex items-center justify-center">
@@ -92,7 +92,7 @@
       "posted": (r.posted_at | timeago) if r.posted_at else "",
       "description": r.description or "",
       "url": r.url,
-      "photos": r.photos or ([r.thumbnail] if r.thumbnail else [])
+      "photos": (r.photos or ([r.thumbnail] if r.thumbnail else [])) | map("img_size", "full") | list
     } | tojson }}</script>
   </div>
   {% endfor %}

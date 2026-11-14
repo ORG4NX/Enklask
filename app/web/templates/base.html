@@ -32,7 +32,7 @@
 
   <!-- Header -->
   <header class="bg-white border-b border-warm-200 sticky top-0 z-50">
-    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-4">
+    <div class="max-w-7xl mx-auto px-4 h-14 flex items-center gap-4">
 
       <a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0">
         <svg width="26" height="26" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -74,7 +74,7 @@
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6">
+  <main class="max-w-7xl mx-auto px-4 py-6">
     {% block content %}{% endblock %}
   </main>
 
@@ -139,8 +139,33 @@
       el.className = 'pointer-events-auto max-w-sm text-sm font-medium px-4 py-2.5 rounded-xl shadow-lg transition-opacity duration-300 ' +
         (TOAST_STYLES[detail.level] || TOAST_STYLES.muted);
       el.setAttribute('role', detail.level === 'error' ? 'alert' : 'status');
-      el.textContent = detail.message;
+      var text = document.createElement('span');
+      text.textContent = detail.message;
+      el.appendChild(text);
       el.onclick = function () { el.remove(); };
+      var action = detail.action;
+      if (action && action.url) {
+        // e.g. "Annonce masquée · Annuler": replays a request, swapping the
+        // response into its placeholder, or reloading the view if it is gone.
+        el.classList.add('flex', 'items-center', 'gap-3');
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'font-semibold underline underline-offset-2 hover:opacity-80';
+        btn.textContent = action.label || 'Annuler';
+        btn.onclick = function (ev) {
+          ev.stopPropagation();
+          el.remove();
+          var target = action.target && document.querySelector(action.target);
+          if (target) {
+            htmx.ajax('POST', action.url, {target: target, swap: 'outerHTML', values: action.values || {}});
+          } else {
+            htmx.ajax('POST', action.url, {swap: 'none', values: action.values || {}}).then(function () {
+              htmx.trigger(document.body, 'refresh-done');
+            });
+          }
+        };
+        el.appendChild(btn);
+      }
       document.getElementById('toasts').appendChild(el);
       var ttl = detail.level === 'ok' ? 5000 : 10000;
       setTimeout(function () { el.style.opacity = '0'; }, ttl);
