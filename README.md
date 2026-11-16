@@ -11,7 +11,7 @@ A fitting name for a tool that quietly investigates the marketplaces and reports
 
 A self-hosted tracker that watches second-hand marketplaces for **whatever you're
 hunting**. Define searches grouped into topics and it aggregates the matching ads
-across **eBay, Vinted and Leboncoin** (France)
+across **eBay, Vinted, Leboncoin, Easy Cash and Label Emmaüs** (France)
 in a single dashboard — photos, price, price-drop history, location, and a one-click
 link to the original ad.
 
@@ -46,6 +46,8 @@ location is configurable — track anything: a console, a bike, a camera lens, a
 | eBay                | Official Browse API            | ✅ Stable                       |
 | Vinted              | Unofficial internal JSON API   | ✅ Works (may break on changes) |
 | Leboncoin           | Unofficial API (browser-TLS)   | ✅ Works (no key)               |
+| Easy Cash           | Public search page (HTML)      | ✅ Works (no key)               |
+| Label Emmaüs        | Public catalogue page (HTML)   | ✅ Works (no key)               |
 
 ## Quick start (local)
 
@@ -181,6 +183,13 @@ parsers (no live network needed).
   > residential IP you also browse from can drop that IP's bot score and get the official
   > Leboncoin app blocked on every device sharing it. The proxy applies to both the curl and
   > Camoufox transports; everything else stays direct.
+- **Easy Cash** — turn it on in the settings page (`enable_easycash`). Reads the public,
+  server-rendered search of `bons-plans.easycash.fr` (second-hand shop chain, strong on
+  consoles and retro games). A result is a catalogue product that may group several
+  offers: the price shown is the cheapest one. Condition filters do not apply.
+- **Label Emmaüs** — turn it on in the settings page (`enable_label_emmaus`). Reads the
+  public catalogue of `label-emmaus.co` (Emmaüs and other social-economy shops); price,
+  condition and sort are filtered by the site.
 
 ## Roadmap
 

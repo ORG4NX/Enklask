@@ -30,6 +30,8 @@ _SOURCE_COLOR = {
     "ebay": 0x0064D2,
     "vinted": 0x09B1BA,
     "leboncoin": 0xFF6E14,
+    "easycash": 0xF5B400,
+    "label_emmaus": 0x10B981,
 }
 _DEFAULT_COLOR = 0xE63946  # brand red
 

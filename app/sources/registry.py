@@ -33,10 +33,24 @@ def _leboncoin() -> BaseSource:
     return LeboncoinSource()
 
 
+def _easycash() -> BaseSource:
+    from .easycash import EasyCashSource
+
+    return EasyCashSource()
+
+
+def _label_emmaus() -> BaseSource:
+    from .label_emmaus import LabelEmmausSource
+
+    return LabelEmmausSource()
+
+
 _FACTORIES: tuple[Callable[[], BaseSource], ...] = (
     _ebay,
     _vinted,
     _leboncoin,
+    _easycash,
+    _label_emmaus,
 )
 
 

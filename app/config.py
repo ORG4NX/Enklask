@@ -33,6 +33,8 @@ class Settings(BaseModel):
     enable_ebay: bool = False
     enable_vinted: bool = False
     enable_leboncoin: bool = False
+    enable_easycash: bool = False
+    enable_label_emmaus: bool = False
 
     # eBay Browse API (client-credentials OAuth)
     ebay_client_id: str = ""
@@ -51,6 +53,10 @@ class Settings(BaseModel):
     # or its bot score taints that IP for every device on it. Also honored via
     # the LEBONCOIN_PROXY / LBC_PROXY environment variables.
     leboncoin_proxy: str | None = None
+
+    # Easy Cash and Label Emmaüs (unofficial, public search pages, no key)
+    easycash_base_url: str = "https://bons-plans.easycash.fr"
+    label_emmaus_base_url: str = "https://www.label-emmaus.co"
 
     # Shared cookies.txt file (Netscape format, e.g. from "Get cookies.txt LOCALLY").
     cookies_file: str = "data/cookies.txt"
