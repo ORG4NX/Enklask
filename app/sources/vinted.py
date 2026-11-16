@@ -1,11 +1,13 @@
-"""Vinted source adapter (unofficial browser scraper).
+"""Vinted source adapter (unofficial).
 
-Vinted has no public API. Search results are server-rendered into the Next.js
-React Server Components payload of ``/catalog``. The old
-``/api/v2/catalog/items`` endpoint is no longer used by the website.
+Searches go first to the JSON catalogue API the website calls
+(``api.vinted.fr/svc-catalogue/items``, see ``vinted_api``): a plain HTTP
+request with a Chrome TLS fingerprint. When that fails, the catalogue page is
+loaded in a persistent Camoufox session instead and the results are read from
+its Next.js React Server Components payload. The old ``/api/v2/catalog/items``
+endpoint answers 404.
 
-The catalogue sits behind Cloudflare, so a persistent Camoufox session warms
-the homepage before loading search and item pages.
+Item pages (description, gallery) are only reachable through the browser.
 
 This is unofficial and may break when Vinted changes things — it is isolated so
 a failure never affects other sources.
@@ -21,6 +23,7 @@ from datetime import datetime, timezone
 from ..config import get_settings
 from ..enums import Source
 from .base import BaseSource, RawListing, SearchQuery
+from .vinted_api import get_client
 from .vinted_browser import fetch_vinted_html
 
 logger = logging.getLogger(__name__)
@@ -61,14 +64,22 @@ class VintedSource(BaseSource):
         return bool(self._settings.enable_vinted)
 
     def search(self, query: SearchQuery) -> list[RawListing]:
-        params: dict[str, str | int] = {
-            "search_text": query.query,
-            "order": _ORDER.get(query.sort, "newest_first"),
-        }
-        if query.price_min:
-            params["price_from"] = query.price_min
-        if query.price_max:
-            params["price_to"] = query.price_max
+        try:
+            return self.search_api(query)
+        except Exception as exc:  # noqa: BLE001 - any API failure -> browser
+            logger.info("Vinted API search failed (%s); using the browser", exc)
+        return self.search_browser(query)
+
+    def search_api(self, query: SearchQuery) -> list[RawListing]:
+        """Catalogue API only, no browser fallback (used by the live feed)."""
+        params = _base_params(query)
+        if query.condition and query.condition in _CONDITION:
+            params["attribute_ids[status]"] = _CONDITION[query.condition]
+        items = get_client(self._base).search(params)
+        return [self._to_raw(item) for item in items]
+
+    def search_browser(self, query: SearchQuery) -> list[RawListing]:
+        params = _base_params(query)
         if query.condition and query.condition in _CONDITION:
             params["status_ids[]"] = _CONDITION[query.condition]
 
@@ -117,6 +128,18 @@ class VintedSource(BaseSource):
             location_city=item.get("city"),
             posted_at=_photo_time(photo),
         )
+
+
+def _base_params(query: SearchQuery) -> dict[str, str | int]:
+    params: dict[str, str | int] = {
+        "search_text": query.query,
+        "order": _ORDER.get(query.sort, "newest_first"),
+    }
+    if query.price_min:
+        params["price_from"] = query.price_min
+    if query.price_max:
+        params["price_to"] = query.price_max
+    return params
 
 
 def fetch_detail(item_id: str) -> dict:

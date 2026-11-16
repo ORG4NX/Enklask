@@ -1,0 +1,2 @@
+{% for row in rows %}{% set fresh = true %}{% include "_live_row.html" %}{% endfor %}
+{% with oob = true %}{% include "_live_status.html" %}{% include "_live_poller.html" %}{% endwith %}

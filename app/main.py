@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.routes import router as api_router
 from .db import init_db
+from .livefeed import start_live_feed, stop_live_feed
 from .migrate import run_migration
 from .scheduler import shutdown_scheduler, start_scheduler
 from .web.routes import router as web_router
@@ -28,9 +29,11 @@ async def lifespan(app: FastAPI):
     init_db()
     run_migration()
     start_scheduler()
+    start_live_feed()
     try:
         yield
     finally:
+        stop_live_feed()
         shutdown_scheduler()
 
 

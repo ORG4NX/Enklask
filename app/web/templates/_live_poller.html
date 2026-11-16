@@ -1,0 +1,6 @@
+{# Polls for ads newer than the cursor and prepends them to #live-list. Each
+   answer carries a replacement poller (out-of-band) holding the new cursor. #}
+<div id="live-poller" data-cursor="{{ cursor }}"
+     hx-get="/partials/live?after={{ cursor }}" hx-trigger="every 8s"
+     hx-target="#live-list" hx-swap="afterbegin"
+     {% if oob %}hx-swap-oob="true"{% endif %}></div>

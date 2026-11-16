@@ -54,6 +54,11 @@ class Settings(BaseModel):
     # the LEBONCOIN_PROXY / LBC_PROXY environment variables.
     leboncoin_proxy: str | None = None
 
+    # Live feed: re-checks every saved search on Vinted's catalogue API at a
+    # short interval, between the regular polls (see app.livefeed).
+    enable_live_feed: bool = True
+    live_feed_interval_seconds: int = 60
+
     # Easy Cash and Label Emmaüs (unofficial, public search pages, no key)
     easycash_base_url: str = "https://bons-plans.easycash.fr"
     label_emmaus_base_url: str = "https://www.label-emmaus.co"

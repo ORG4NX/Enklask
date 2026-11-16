@@ -1,0 +1,29 @@
+{# Engine state for the live page. Swapped out-of-band on every update. #}
+<div id="live-status" class="bg-white rounded-2xl border border-warm-200 px-4 py-3 mb-4 flex items-center gap-3 flex-wrap text-sm"
+     {% if oob %}hx-swap-oob="true"{% endif %}>
+  {% if not feed.enabled %}
+  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium bg-warm-100 text-gray-500">
+    <span class="w-2 h-2 rounded-full bg-gray-400"></span> Direct désactivé
+  </span>
+  <span class="text-gray-400">Active Vinted et le direct dans les <a href="/settings" class="text-brand hover:underline">paramètres</a>. Les annonces des polls réguliers s'affichent quand même ici.</span>
+  {% elif feed.paused_until %}
+  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium bg-amber-50 text-amber-700">
+    <span class="w-2 h-2 rounded-full bg-amber-500"></span> En pause
+  </span>
+  <span class="text-gray-500 min-w-0 truncate" title="{{ feed.last_error }}">Vinted a refusé la dernière requête, reprise automatique. <span class="text-gray-400">({{ feed.last_error }})</span></span>
+  {% elif not feed.watched %}
+  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium bg-warm-100 text-gray-500">
+    <span class="w-2 h-2 rounded-full bg-gray-400"></span> En attente
+  </span>
+  <span class="text-gray-400">Aucune recherche active ne vise Vinted.</span>
+  {% else %}
+  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium bg-emerald-50 text-emerald-700">
+    <span class="live-dot w-2 h-2 rounded-full bg-emerald-500"></span> En direct
+  </span>
+  <span class="text-gray-500">{{ feed.watched }} recherche{{ "s" if feed.watched != 1 else "" }} Vinted, chacune toutes les {{ feed.interval_seconds }}&nbsp;s</span>
+  {% endif %}
+  <span class="ml-auto text-xs text-gray-400 whitespace-nowrap">
+    {% if feed.last_check_at %}vérifié {{ feed.last_check_at | timeago }}{% endif %}
+    {% if feed.new_since_start %} &middot; {{ feed.new_since_start }} nouvelle{{ "s" if feed.new_since_start != 1 else "" }} depuis le démarrage{% endif %}
+  </span>
+</div>

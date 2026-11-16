@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,6 +12,11 @@ from .config import get_settings
 from .geo import haversine_km
 from .models import Listing, ListingTopic
 from .sources.base import RawListing
+
+# The scheduled poll and the live feed both insert listings from their own
+# threads. Without serialising those batches, both can see an ad as unknown
+# and the second insert fails on the (source, source_id) unique constraint.
+write_lock = threading.RLock()
 
 
 def _iso(dt: datetime | None) -> str:

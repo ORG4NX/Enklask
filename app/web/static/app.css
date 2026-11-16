@@ -178,6 +178,18 @@ input:checked + .toggle-track::after {
 }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
+/* Live feed: arrivals glow briefly, the status dot pulses. */
+.live-row { transition: box-shadow 1s ease, border-color 1s ease; }
+.live-row-new {
+  border-color: rgb(16 185 129 / 0.6);
+  box-shadow: 0 0 0 3px rgb(16 185 129 / 0.18);
+}
+.live-dot { animation: live-pulse 1.6s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

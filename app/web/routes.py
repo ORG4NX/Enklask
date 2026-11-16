@@ -22,6 +22,7 @@ from ..config import get_settings, save_settings
 from ..db import get_session
 from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
+from ..livefeed import live_feed
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
 from ..poller import poll_once, poll_search, poll_topic
 from ..scheduler import next_poll_at, reschedule_poll
@@ -1245,6 +1246,64 @@ def liked_partial(request: Request, session: Session = Depends(get_session)):
 
 
 # ---------------------------------------------------------------------------
+# Live feed ("Direct"): newest ads first, as the live feed and the polls find
+# them. The page polls /partials/live?after=<last id> and prepends what came
+# in since; the poller element itself is swapped out-of-band with the new
+# cursor.
+# ---------------------------------------------------------------------------
+
+_LIVE_PAGE_SIZE = 60
+
+
+def _live_rows(session: Session, after: int | None = None) -> list[dict]:
+    stmt = select(Listing).order_by(Listing.id.desc()).limit(_LIVE_PAGE_SIZE)
+    if after is not None:
+        stmt = stmt.where(Listing.id > after)
+    listings = list(session.scalars(stmt))
+    if not listings:
+        return []
+    # One topic/search per ad: the link it was first found under.
+    links = session.execute(
+        select(ListingTopic.listing_id, Topic, SavedSearch)
+        .join(Topic, Topic.id == ListingTopic.topic_id)
+        .outerjoin(SavedSearch, SavedSearch.id == ListingTopic.search_id)
+        .where(ListingTopic.listing_id.in_([listing.id for listing in listings]))
+        .order_by(ListingTopic.listing_id, Topic.id)
+    ).all()
+    origin: dict[int, tuple] = {}
+    for listing_id, topic, search in links:
+        origin.setdefault(listing_id, (topic, search))
+    return [
+        {"listing": listing, "topic": origin.get(listing.id, (None, None))[0],
+         "search": origin.get(listing.id, (None, None))[1]}
+        for listing in listings
+    ]
+
+
+def _live_context(session: Session, request: Request, after: int | None = None) -> dict:
+    rows = _live_rows(session, after)
+    if rows:
+        cursor = rows[0]["listing"].id
+    elif after is not None:
+        cursor = after
+    else:
+        cursor = session.scalar(select(func.max(Listing.id))) or 0
+    return {"request": request, "rows": rows, "cursor": cursor, "feed": live_feed.status()}
+
+
+@router.get("/live", response_class=HTMLResponse)
+def live_page(request: Request, session: Session = Depends(get_session)):
+    return templates.TemplateResponse("live.html", _live_context(session, request))
+
+
+@router.get("/partials/live", response_class=HTMLResponse)
+def live_partial(request: Request, after: int = 0, session: Session = Depends(get_session)):
+    """Ads newer than ``after``, the refreshed status and the next poller."""
+    ctx = _live_context(session, request, after=max(after, 0))
+    return templates.TemplateResponse("_live_update.html", ctx)
+
+
+# ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
 
@@ -1317,6 +1376,7 @@ def settings_page(request: Request):
 _SETTINGS_INT_FIELDS = [
     ("poll_interval_minutes", "L'intervalle", 1, None),
     ("notify_max_per_poll", "Le maximum de notifications par poll", 1, None),
+    ("live_feed_interval_seconds", "L'intervalle du direct", 30, None),
 ]
 _SETTINGS_FLOAT_FIELDS = [
     ("home_lat", "La latitude", -90.0, 90.0),
@@ -1331,7 +1391,7 @@ def _validate_settings_form(form) -> tuple[dict, list[str]]:
 
     for f in (
         "enable_ebay", "enable_vinted", "enable_leboncoin", "enable_easycash",
-        "enable_label_emmaus", "notify_on_first_run",
+        "enable_label_emmaus", "notify_on_first_run", "enable_live_feed",
     ):
         updates[f] = f in form
 
@@ -1393,6 +1453,7 @@ async def settings_save(request: Request):
     new = get_settings()
     if new.poll_interval_minutes != old_interval:
         reschedule_poll(new.poll_interval_minutes)
+    live_feed.wake()  # pick up the toggle / interval without waiting
 
     # Redirect so a browser refresh doesn't re-submit the form.
     return RedirectResponse("/settings?saved=1", status_code=303)

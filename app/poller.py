@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update
 
 from .db import session_scope
-from .dedup import upsert_listing
+from .dedup import upsert_listing, write_lock
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
 from .sources.base import SearchQuery
@@ -231,7 +231,7 @@ def _poll_one(topic, search, sources) -> tuple[
         successful_sources.add(source_name)
         source_ids[source_name] = {raw.source_id for raw in raws}
 
-        with session_scope() as session:
+        with write_lock, session_scope() as session:
             for raw in raws:
                 listing = upsert_listing(
                     session,

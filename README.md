@@ -166,11 +166,21 @@ parsers (no live network needed).
 
 ### Enabling the unofficial sources
 
-- **Vinted** — set `ENABLE_VINTED=true`. A persistent Camoufox browser
-  session (profile stored in `data/vinted-camoufox-profile`) warms the homepage,
-  completes the JavaScript challenge, and loads `/catalog`; the connector then
-  parses its server-rendered Next.js payload. Docker runs the headed browser in
-  Xvfb, so no window is displayed.
+- **Vinted** — set `ENABLE_VINTED=true`. Searches call the JSON catalogue API the
+  website uses (`api.vinted.fr/svc-catalogue/items`) with a Chrome TLS fingerprint,
+  after a light page load for the anonymous cookies (approach from
+  [Vintrack](https://github.com/JakobAIOdev/Vintrack-Vinted-Monitor), MIT). If that
+  fails, a persistent Camoufox browser session (profile stored in
+  `data/vinted-camoufox-profile`) loads `/catalog` and the connector parses its
+  server-rendered Next.js payload; item previews always use the browser. Docker runs
+  the headed browser in Xvfb, so no window is displayed.
+- **Live feed** (`/live`, on by default, `enable_live_feed`) — between regular polls,
+  every enabled search that includes Vinted is re-checked on that API, newest first,
+  every `live_feed_interval_seconds` (60 by default, 30 minimum), spread evenly so N
+  searches mean one request every interval/N. New ads are stored and notified; the
+  first results of a new search are only a baseline. A refusal pauses the feed with
+  exponential backoff (up to 15 min). Only Vinted is watched live: frequent requests
+  would get the IP blocked by Leboncoin's DataDome.
 - **Leboncoin** — set `ENABLE_LEBONCOIN=true`. Reuses a coherent `curl_cffi` browser session
   for lightweight searches. If DataDome challenges it (at the homepage warm-up or the search),
   Enklask hands that search to a persistent Camoufox session that runs the JavaScript device
