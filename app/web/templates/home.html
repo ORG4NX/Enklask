@@ -5,7 +5,7 @@
 {% if source_status or topic_stats %}
 <div class="flex items-center gap-2 flex-wrap mb-6">
   {% for s in source_status %}
-  <span class="source-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium capitalize
+  <span class="source-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium
                {% if s.state == 'ok' %}bg-emerald-50 text-emerald-700
                {% elif s.state == 'warn' %}bg-amber-50 text-amber-700
                {% else %}bg-red-50 text-red-600{% endif %}"

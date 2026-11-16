@@ -4,7 +4,7 @@
   <p class="font-semibold">Certaines sources n'ont pas pu être interrogées.</p>
   <ul class="mt-1 space-y-0.5 text-xs">
     {% for source, message in errors.items() %}
-    <li><span class="font-semibold">{{ source | capitalize }}</span> — {{ message }}</li>
+    <li><span class="font-semibold">{{ source | source_label }}</span> — {{ message }}</li>
     {% endfor %}
   </ul>
 </div>
