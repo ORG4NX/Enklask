@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings, save_settings
 from ..db import get_session
+from ..filters import parse_exclude_words
 from ..enums import ListingStatus
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
 from ..notifier import Notifier
@@ -275,6 +276,9 @@ def create_search(slug: str, body: dict, session: Session = Depends(get_session)
         max_distance_km=body.get("max_distance_km"),
         sources=body.get("sources", []),
         tags=body.get("tags", []),
+        exclude_words=parse_exclude_words(
+            ", ".join(raw) if isinstance(raw := body.get("exclude_words") or "", list) else raw
+        ),
     )
     session.add(search)
     session.commit()

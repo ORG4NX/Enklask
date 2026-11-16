@@ -40,6 +40,12 @@
     {% endfor %}
   </div>
 
+  <label class="block">
+    <span class="text-xs font-medium text-gray-500">Mots exclus <span class="font-normal text-gray-400">(séparés par des virgules, cherchés dans le titre)</span></span>
+    <input type="text" name="exclude_words" value="{{ v.exclude_words | join(', ') }}" placeholder="wii, gamecube, boîte vide"
+           class="{{ field_cls }} mt-1" />
+  </label>
+
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-start">
     <label class="block">
       <span class="text-xs font-medium text-gray-500">État</span>

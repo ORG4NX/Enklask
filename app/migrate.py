@@ -87,6 +87,12 @@ def _ensure_saved_search_columns() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE saved_searches ADD COLUMN condition VARCHAR(16)"))
         logger.info("Added 'condition' column to saved_searches.")
+    if "exclude_words" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE saved_searches ADD COLUMN exclude_words TEXT DEFAULT '[]'")
+            )
+        logger.info("Added 'exclude_words' column to saved_searches.")
 
 
 def _ensure_listing_topic_columns() -> None:

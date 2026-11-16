@@ -162,6 +162,8 @@ class SavedSearch(Base):
     condition: Mapped[str | None] = mapped_column(String(16), nullable=True)
     sources: Mapped[list] = mapped_column(JSON, default=list)
     tags: Mapped[list] = mapped_column(JSON, default=list)
+    # Words or phrases that discard a result when its title contains them.
+    exclude_words: Mapped[list] = mapped_column(JSON, default=list)
     enabled: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 

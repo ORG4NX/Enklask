@@ -41,6 +41,7 @@ from .config import get_settings
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
 from .enums import Source
+from .filters import drop_excluded
 from .jobs import jobs
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
@@ -91,6 +92,7 @@ class WatchedSearch:
     price_max: float | None
     condition: str | None
     tags: list[str]
+    exclude_words: list[str]
     topic_id: int
     topic_name: str
     topic_slug: str
@@ -139,6 +141,7 @@ def watched_searches(source: Source = Source.VINTED) -> list[WatchedSearch]:
                 id=search.id, name=search.name or search.query, query=search.query,
                 price_min=search.price_min, price_max=search.price_max,
                 condition=search.condition, tags=list(search.tags or []),
+                exclude_words=list(search.exclude_words or []),
                 topic_id=topic.id, topic_name=topic.name, topic_slug=topic.slug,
                 apprise_urls=topic.apprise_url_list,
             ))
@@ -260,6 +263,7 @@ class Lane:
         except Exception as exc:  # noqa: BLE001
             self._record_failure(search, exc)
             return False
+        raws = drop_excluded(raws, search.exclude_words)
 
         with write_lock, session_scope() as session:
             baseline = _is_baseline(session, search.id, self.spec.source)

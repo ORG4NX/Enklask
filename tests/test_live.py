@@ -284,7 +284,8 @@ def test_header_highlights_the_current_page_icon(client, factory):
 def test_status_says_starting_before_the_first_round(client, factory, monkeypatch):
     monkeypatch.setattr(web_routes, "live_feed", LiveFeed())
     settings = livefeed.get_settings().model_copy(
-        update={"enable_live_feed": True, "enable_vinted": True}
+        update={"enable_live_feed": True, "enable_vinted": True,
+                "enable_live_feed_leboncoin": False}
     )
     monkeypatch.setattr(livefeed, "get_settings", lambda: settings)
     html = client.get("/live").text
@@ -321,3 +322,35 @@ def test_duration_and_timeuntil_filters():
     assert web_routes._duration(60) == "60 s" and web_routes._duration(300) == "5 min"
     soon = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=30)
     assert web_routes._timeuntil(soon) == "dans 4 min"
+
+
+def test_live_feed_drops_excluded_words_before_storing(factory, notified):
+    _, search_id = _seed(factory)
+    with factory() as session:
+        session.get(SavedSearch, search_id).exclude_words = ["wii"]
+        session.commit()
+    search = watched_searches()[0]
+    assert search.exclude_words == ["wii"]
+    lane = _lane(_Fetch([_raw(1, "New 3DS XL"), _raw(2, "Wii + New 3DS")]))
+    assert lane.check(search) is True
+    with factory() as session:
+        assert [l.source_id for l in session.scalars(select(Listing))] == ["1"]
+
+
+def test_search_forms_save_and_show_excluded_words(client, factory):
+    _seed(factory)
+    client.post("/t/nintendo/searches", data={"query": "gameboy player",
+                                             "exclude_words": "wii, gamecube"})
+    with factory() as session:
+        added = session.scalar(select(SavedSearch).where(SavedSearch.query == "gameboy player"))
+        assert added.exclude_words == ["wii", "gamecube"]
+        search_id = added.id
+
+    edit = client.get(f"/t/nintendo/searches/{search_id}/edit").text
+    assert 'name="exclude_words" value="wii, gamecube"' in edit
+
+    row = client.post(f"/t/nintendo/searches/{search_id}",
+                      data={"query": "gameboy player", "exclude_words": "Wii U, boîte vide"}).text
+    assert "sans : Wii U, boîte vide" in row
+    with factory() as session:
+        assert session.get(SavedSearch, search_id).exclude_words == ["Wii U", "boîte vide"]
