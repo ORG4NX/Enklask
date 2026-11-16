@@ -1,0 +1,17 @@
+{# Results of a city lookup on the settings page; a click fills lat/lon. #}
+{% if error %}
+<p class="text-xs text-gray-500">{{ error }}</p>
+{% else %}
+<ul class="bg-white border border-warm-200 rounded-xl divide-y divide-warm-200 overflow-hidden" aria-label="Villes trouvées">
+  {% for place in places %}
+  <li>
+    <button type="button" onclick="pickPlace(this)"
+            data-lat="{{ place.lat }}" data-lon="{{ place.lon }}" data-label="{{ place.label }}"
+            class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-warm-50 hover:text-brand">
+      {{ place.label }}
+      <span class="block text-[11px] text-gray-400">{{ place.lat }}, {{ place.lon }}</span>
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

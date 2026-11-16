@@ -121,29 +121,19 @@ def _query_listings(
         stmt = stmt.where(Listing.price <= price_max)
     if distance_max is not None:
         stmt = stmt.where(Listing.distance_km <= distance_max)
+    # JSON-list filters run in SQL (SQLite json_each), before LIMIT/OFFSET, so
+    # a page is never thinned out after the fact.
+    if shipping:
+        options = func.json_each(Listing.shipping_options).table_valued("value")
+        stmt = stmt.where(select(options.c.value).where(options.c.value == shipping).exists())
+    if tags and topic_id is not None:
+        # ListingTopic is already joined (topic view): match its own tags.
+        topic_tags = func.json_each(ListingTopic.tags).table_valued("value")
+        stmt = stmt.where(select(topic_tags.c.value).where(topic_tags.c.value.in_(tags)).exists())
 
     order = _SORT_ORDERS.get(sort or "recent", _SORT_ORDERS["recent"])
     stmt = stmt.order_by(order).limit(limit).offset(offset)
-    rows = list(session.scalars(stmt))
-
-    if shipping:
-        rows = [r for r in rows if shipping in (r.shipping_options or [])]
-
-    if tags and topic_id is not None:
-        tag_set = set(tags)
-        filtered = []
-        for r in rows:
-            lt = session.scalar(
-                select(ListingTopic).where(
-                    ListingTopic.listing_id == r.id,
-                    ListingTopic.topic_id == topic_id,
-                )
-            )
-            if lt and tag_set.intersection(lt.tags or []):
-                filtered.append(r)
-        rows = filtered
-
-    return rows
+    return list(session.scalars(stmt))
 
 
 @router.get("/listings", response_model=list[ListingOut])

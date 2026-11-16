@@ -14,7 +14,9 @@
 {% set source_styles = {
   "ebay": "bg-blue-50 text-blue-600",
   "vinted": "bg-teal-50 text-teal-600",
-  "leboncoin": "bg-orange-50 text-orange-600"
+  "leboncoin": "bg-orange-50 text-orange-600",
+  "easycash": "bg-amber-50 text-amber-600",
+  "label_emmaus": "bg-emerald-50 text-emerald-600"
 } %}
 
 <div class="flex items-center justify-between mb-4">
@@ -46,7 +48,7 @@
       {% endif %}
       <span class="source-pill absolute top-2.5 left-2.5 px-2 py-0.5 rounded-lg font-semibold backdrop-blur-sm
                    {{ source_styles.get(r.source.value, 'bg-gray-50 text-gray-600') }}">
-        {{ r.source.value }}
+        {{ r.source | source_label }}
       </span>
     </button>
 

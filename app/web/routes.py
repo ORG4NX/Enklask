@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -132,6 +133,64 @@ CONDITION_LABELS = {
     "fair": "Satisfaisant",
     "for_parts": "Pour pièces",
 }
+
+SOURCE_LABELS = {source.value: label for source, label in (
+    (Source.EBAY, "eBay"), (Source.VINTED, "Vinted"), (Source.LEBONCOIN, "Leboncoin"),
+    (Source.EASYCASH, "Easy Cash"), (Source.LABEL_EMMAUS, "Label Emmaüs"),
+)}
+# Display name of a source wherever a pill, option or badge shows one.
+templates.env.filters["source_label"] = lambda value: SOURCE_LABELS.get(
+    getattr(value, "value", value), str(getattr(value, "value", value)).capitalize()
+)
+templates.env.globals["source_labels"] = SOURCE_LABELS
+
+
+def _parse_search_form(form) -> tuple[dict, dict[str, str]]:
+    """Fields of a saved search from the add/edit form, plus readable errors.
+
+    The values come back even when invalid (``_raw_prices`` keeps the typed
+    text), so the form can be shown again as the user left it."""
+    errors: dict[str, str] = {}
+    query = (form.get("query") or "").strip()
+    if not query:
+        errors["query"] = "Les mots-clés sont obligatoires."
+    name = (form.get("name") or "").strip()[:128] or query[:64]
+    tags = [t.strip() for t in (form.get("tags") or "").split(",") if t.strip()]
+
+    prices: dict[str, float | None] = {}
+    raw_prices: dict[str, str] = {}
+    for field in ("price_min", "price_max"):
+        raw = (form.get(field) or "").strip()
+        raw_prices[field] = raw
+        prices[field] = None
+        if not raw:
+            continue
+        try:
+            value = float(raw.replace(",", "."))
+        except ValueError:
+            errors[field] = "Doit être un nombre."
+            continue
+        if value < 0:
+            errors[field] = "Doit être positif."
+        prices[field] = value
+    if (
+        prices["price_min"] is not None and prices["price_max"] is not None
+        and prices["price_min"] > prices["price_max"]
+    ):
+        errors["price_max"] = "Doit être supérieur au prix min."
+
+    condition = form.get("condition") or None
+    if condition not in CONDITION_LABELS:
+        condition = None
+    # No source ticked means "every enabled source" (the poller's convention).
+    sources = [v for v in form.getlist("sources") if v in SOURCE_LABELS]
+
+    values = {
+        "name": name, "query": query, "tags": tags, "condition": condition,
+        "sources": sources, **prices, "_raw_prices": raw_prices,
+    }
+    return values, errors
+
 
 # Listing statuses as shown in the topic filter bar (the enum values are
 # English identifiers, the UI is French).
@@ -510,6 +569,7 @@ def topic_settings(slug: str, request: Request, session: Session = Depends(get_s
             s.id: _refresh_view(jobs.get(search_key(s.id))) for s in topic.searches
         },
         "condition_labels": CONDITION_LABELS,
+        "source_labels": SOURCE_LABELS,
     })
 
 
@@ -548,43 +608,107 @@ async def add_search(slug: str, request: Request, session: Session = Depends(get
     topic = session.scalar(select(Topic).where(Topic.slug == slug))
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
-    form = await request.form()
-    query = form.get("query", "").strip()
-    if not query:
+    values, errors = _parse_search_form(await request.form())
+    if "query" in errors:
         return RedirectResponse(f"/t/{slug}/settings", status_code=303)
-
-    tags_raw = form.get("tags", "")
-    tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
-
-    search = SavedSearch(
-        topic_id=topic.id,
-        name=form.get("name", query[:64]),
-        query=query,
-        price_min=_optional_float(form.get("price_min")),
-        price_max=_optional_float(form.get("price_max")),
-        condition=(form.get("condition") or None),
-        tags=tags,
-    )
-    session.add(search)
+    # The add form stays lenient as before: a bad price is dropped rather
+    # than blocking the whole search.
+    for field in ("price_min", "price_max"):
+        if field in errors:
+            values[field] = None
+    values.pop("_raw_prices")
+    session.add(SavedSearch(topic_id=topic.id, **values))
     session.commit()
     return RedirectResponse(f"/t/{slug}/settings", status_code=303)
 
 
+def _topic_search(session: Session, slug: str, search_id: int) -> tuple[Topic, SavedSearch]:
+    topic = session.scalar(select(Topic).where(Topic.slug == slug))
+    search = session.get(SavedSearch, search_id)
+    if topic is None or search is None or search.topic_id != topic.id:
+        raise HTTPException(status_code=404, detail="Search not found")
+    return topic, search
+
+
+def _search_edit_response(
+    request: Request, topic: Topic, search: SavedSearch,
+    values: dict | None = None, errors: dict | None = None,
+):
+    if values is None:
+        values = {
+            "name": search.name, "query": search.query, "tags": search.tags or [],
+            "condition": search.condition, "sources": search.sources or [],
+            "_raw_prices": {
+                field: ("%g" % getattr(search, field)) if getattr(search, field) is not None else ""
+                for field in ("price_min", "price_max")
+            },
+        }
+    return templates.TemplateResponse("_search_edit.html", {
+        "request": request, "topic": topic, "search": search, "v": values,
+        "errors": errors or {}, "condition_labels": CONDITION_LABELS,
+        "source_labels": SOURCE_LABELS,
+    })
+
+
+@router.get("/t/{slug}/searches/{search_id}/edit", response_class=HTMLResponse)
+def edit_search_form(
+    slug: str, search_id: int, request: Request, session: Session = Depends(get_session)
+):
+    topic, search = _topic_search(session, slug, search_id)
+    return _search_edit_response(request, topic, search)
+
+
+@router.get("/t/{slug}/searches/{search_id}/row", response_class=HTMLResponse)
+def search_row(
+    slug: str, search_id: int, request: Request, session: Session = Depends(get_session)
+):
+    topic, _ = _topic_search(session, slug, search_id)
+    return _search_row_response(request, session, topic, search_id)
+
+
+@router.post("/t/{slug}/searches/{search_id}", response_class=HTMLResponse)
+async def update_search(
+    slug: str, search_id: int, request: Request, session: Session = Depends(get_session)
+):
+    """Save the inline edit form. Errors show the form again (200, so htmx
+    swaps it) with what was typed; success swaps the read-only row back in."""
+    topic, search = _topic_search(session, slug, search_id)
+    values, errors = _parse_search_form(await request.form())
+    if errors:
+        return _search_edit_response(request, topic, search, values, errors)
+    values.pop("_raw_prices")
+    for field, value in values.items():
+        setattr(search, field, value)
+    session.commit()
+    return _search_row_response(request, session, topic, search_id)
+
+
 @router.post("/t/{slug}/searches/{search_id}/delete")
-def remove_search(slug: str, search_id: int, session: Session = Depends(get_session)):
+def remove_search(
+    slug: str, search_id: int, request: Request, session: Session = Depends(get_session)
+):
     search = session.get(SavedSearch, search_id)
     if search:
         session.delete(search)
         session.commit()
+    if request.headers.get("hx-request"):
+        return HTMLResponse("")  # the row disappears in place
     return RedirectResponse(f"/t/{slug}/settings", status_code=303)
 
 
 @router.post("/t/{slug}/searches/{search_id}/toggle")
-def toggle_search(slug: str, search_id: int, session: Session = Depends(get_session)):
+def toggle_search(
+    slug: str, search_id: int, request: Request, session: Session = Depends(get_session)
+):
     search = session.get(SavedSearch, search_id)
     if search:
         search.enabled = not search.enabled
         session.commit()
+    if request.headers.get("hx-request"):
+        topic = session.scalar(select(Topic).where(Topic.slug == slug))
+        if topic is None:
+            raise HTTPException(status_code=404, detail="Topic not found")
+        return _search_row_response(request, session, topic, search_id)
     return RedirectResponse(f"/t/{slug}/settings", status_code=303)
 
 
@@ -998,7 +1122,7 @@ def _search_row_response(
         {
             "request": request, "search": search, "topic": topic,
             "count": count, "condition_labels": CONDITION_LABELS,
-            "refresh": view,
+            "source_labels": SOURCE_LABELS, "refresh": view,
         },
         headers=headers,
     )
@@ -1125,6 +1249,56 @@ def liked_partial(request: Request, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 
 
+# City lookup for the home location (settings page). Goes through the server
+# so the browser needs no outside access; Nominatim's usage policy asks for an
+# identifying User-Agent and at most one request per second, which an explicit
+# "Chercher" click (no search-as-you-type) respects.
+_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_GEOCODE_HEADERS = {"User-Agent": "Enklask/1.0 (self-hosted listing tracker)"}
+
+
+def _geocode(query: str) -> list[dict]:
+    resp = httpx.get(
+        _NOMINATIM_URL,
+        params={"q": query, "format": "jsonv2", "limit": 5, "accept-language": "fr"},
+        headers=_GEOCODE_HEADERS,
+        timeout=8.0,
+    )
+    resp.raise_for_status()
+    places = []
+    for item in resp.json():
+        try:
+            lat, lon = float(item["lat"]), float(item["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        places.append({
+            "label": item.get("display_name") or query,
+            "lat": round(lat, 4), "lon": round(lon, 4),
+        })
+    return places
+
+
+@router.get("/partials/geocode", response_class=HTMLResponse)
+def geocode(request: Request, q: str = ""):
+    query = q.strip()
+    places: list[dict] = []
+    error = ""
+    if len(query) < 2:
+        error = "Tape au moins deux lettres."
+    else:
+        try:
+            places = _geocode(query[:200])
+        except Exception as exc:
+            logger.warning("Geocoding %r failed: %s", query, exc)
+            error = "Recherche de ville indisponible pour le moment."
+        else:
+            if not places:
+                error = "Aucune ville trouvée."
+    return templates.TemplateResponse("_geocode_results.html", {
+        "request": request, "places": places, "error": error,
+    })
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     settings = get_settings()
@@ -1155,7 +1329,10 @@ def _validate_settings_form(form) -> tuple[dict, list[str]]:
     updates: dict = {}
     errors: list[str] = []
 
-    for f in ("enable_ebay", "enable_vinted", "enable_leboncoin", "notify_on_first_run"):
+    for f in (
+        "enable_ebay", "enable_vinted", "enable_leboncoin", "enable_easycash",
+        "enable_label_emmaus", "notify_on_first_run",
+    ):
         updates[f] = f in form
 
     for f, label, lo, hi in _SETTINGS_INT_FIELDS:

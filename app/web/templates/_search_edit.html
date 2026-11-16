@@ -1,0 +1,79 @@
+{# Inline edit form for one saved search. Swaps itself for the read-only row
+   (_search_row.html) on save or cancel; errors keep the form with what was typed. #}
+{% set field_cls = "w-full bg-white border border-warm-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-brand/20 focus:border-brand/30 focus:outline-none" %}
+{% set error_cls = "border-red-300 focus:border-red-400 focus:ring-red-200" %}
+{% macro field_error(name) %}{% if errors.get(name) %}<p id="err-{{ search.id }}-{{ name }}" class="text-xs text-red-600 mt-1">{{ errors[name] }}</p>{% endif %}{% endmacro %}
+<form id="search-row-{{ search.id }}"
+      hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}"
+      hx-target="this" hx-swap="outerHTML"
+      class="px-5 py-4 space-y-3 bg-warm-50/50"
+      aria-label="Modifier la recherche {{ search.name }}">
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <label class="block">
+      <span class="text-xs font-medium text-gray-500">Mots-clés</span>
+      <input type="text" name="query" required value="{{ v.query }}" autofocus
+             {% if errors.get('query') %}aria-invalid="true" aria-describedby="err-{{ search.id }}-query"{% endif %}
+             class="{{ field_cls }} mt-1 {% if errors.get('query') %}{{ error_cls }}{% endif %}" />
+      {{ field_error('query') }}
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-gray-500">Nom</span>
+      <input type="text" name="name" value="{{ v.name }}" placeholder="Mots-clés par défaut"
+             class="{{ field_cls }} mt-1" />
+    </label>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+    <label class="block">
+      <span class="text-xs font-medium text-gray-500">Tags</span>
+      <input type="text" name="tags" value="{{ v.tags | join(', ') }}" placeholder="OLED, écran, pièces"
+             class="{{ field_cls }} mt-1" />
+    </label>
+    {% for field, label in (("price_min", "Prix min €"), ("price_max", "Prix max €")) %}
+    <label class="block">
+      <span class="text-xs font-medium text-gray-500">{{ label }}</span>
+      <input type="text" inputmode="decimal" name="{{ field }}" value="{{ v._raw_prices[field] }}" placeholder="Aucun"
+             {% if errors.get(field) %}aria-invalid="true" aria-describedby="err-{{ search.id }}-{{ field }}"{% endif %}
+             class="{{ field_cls }} mt-1 {% if errors.get(field) %}{{ error_cls }}{% endif %}" />
+      {{ field_error(field) }}
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-start">
+    <label class="block">
+      <span class="text-xs font-medium text-gray-500">État</span>
+      <select name="condition" class="{{ field_cls }} mt-1">
+        <option value="">Tous</option>
+        {% for key, label in condition_labels.items() %}
+        <option value="{{ key }}" {% if v.condition == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <fieldset>
+      <legend class="text-xs font-medium text-gray-500">Sources <span class="font-normal text-gray-400">(aucune = toutes)</span></legend>
+      <div class="flex flex-wrap gap-2 mt-1">
+        {% for key, label in source_labels.items() %}
+        <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 bg-white border border-warm-200 rounded-xl px-3 py-2 cursor-pointer has-[:checked]:border-brand/40 has-[:checked]:bg-brand-light">
+          <input type="checkbox" name="sources" value="{{ key }}" {% if key in v.sources %}checked{% endif %}
+                 class="accent-[#E63946]" />
+          {{ label }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="flex items-center gap-3 pt-1">
+    <button type="submit"
+            class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
+      Enregistrer
+    </button>
+    <button type="button"
+            hx-get="/t/{{ topic.slug }}/searches/{{ search.id }}/row"
+            hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML"
+            class="text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors">
+      Annuler
+    </button>
+  </div>
+</form>

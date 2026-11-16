@@ -148,7 +148,7 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 
 from sqlalchemy.orm import sessionmaker
 
@@ -781,3 +781,207 @@ def test_grid_card_shows_the_first_photo_over_the_thumbnail(client, db_session):
     assert '<img src="https://images1.vinted.net/t/a/f800/1.jpeg"' not in html
     # No photos: the thumbnail is the fallback, upgraded to a larger variant.
     assert '<img src="https://img.leboncoin.fr/api/v1/i/x.jpg?rule=ad-image"' in html
+
+
+def _search_of(session, topic):
+    return session.scalar(select(SavedSearch).where(SavedSearch.topic_id == topic.id))
+
+
+def test_search_edit_form_is_prefilled_and_saves_in_place(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = _search_of(db_session, topic)
+    search.price_max = 250.0
+    db_session.commit()
+
+    form = client.get(f"/t/{topic.slug}/searches/{search.id}/edit")
+    assert form.status_code == 200
+    assert f'id="search-row-{search.id}"' in form.text
+    assert 'value="switch oled"' in form.text and 'value="250"' in form.text
+
+    resp = client.post(
+        f"/t/{topic.slug}/searches/{search.id}",
+        data={
+            "query": "switch lite", "name": "", "tags": "lite, bleu",
+            "price_min": "20", "price_max": "99,5", "condition": "good",
+            "sources": ["vinted", "leboncoin", "bogus"],
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    # The read-only row comes back, showing the new values.
+    assert "<form" not in resp.text.split(">", 1)[0]
+    assert "switch lite" in resp.text and "Vinted, Leboncoin seulement" in resp.text
+    db_session.refresh(search)
+    assert (search.query, search.name, search.tags) == ("switch lite", "switch lite", ["lite", "bleu"])
+    assert (search.price_min, search.price_max, search.condition) == (20.0, 99.5, "good")
+    assert search.sources == ["vinted", "leboncoin"]
+
+
+def test_search_edit_errors_keep_the_form_and_the_typed_values(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = _search_of(db_session, topic)
+
+    resp = client.post(
+        f"/t/{topic.slug}/searches/{search.id}",
+        data={"query": "switch", "price_min": "100", "price_max": "abc"},
+    )
+    assert resp.status_code == 200
+    assert "Doit être un nombre." in resp.text
+    assert 'value="abc"' in resp.text and 'aria-invalid="true"' in resp.text
+
+    resp = client.post(
+        f"/t/{topic.slug}/searches/{search.id}",
+        data={"query": "", "price_min": "100", "price_max": "50"},
+    )
+    assert "Les mots-clés sont obligatoires." in resp.text
+    assert "Doit être supérieur au prix min." in resp.text
+    db_session.refresh(search)
+    assert search.query == "switch oled" and search.price_min is None
+
+
+def test_search_edit_cancel_returns_the_row(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = _search_of(db_session, topic)
+    resp = client.get(f"/t/{topic.slug}/searches/{search.id}/row")
+    assert resp.status_code == 200
+    assert f'id="search-row-{search.id}"' in resp.text and "Modifier la recherche" in resp.text
+
+
+def test_search_of_another_topic_cannot_be_edited(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = _search_of(db_session, topic)
+    other = Topic(name="Autre", slug="autre")
+    db_session.add(other)
+    db_session.commit()
+    assert client.get(f"/t/autre/searches/{search.id}/edit").status_code == 404
+    assert client.post(f"/t/autre/searches/{search.id}", data={"query": "x"}).status_code == 404
+
+
+def test_search_toggle_and_delete_answer_htmx_in_place(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = _search_of(db_session, topic)
+    hx = {"HX-Request": "true"}
+
+    resp = client.post(f"/t/{topic.slug}/searches/{search.id}/toggle", headers=hx)
+    assert resp.status_code == 200 and f'id="search-row-{search.id}"' in resp.text
+    assert 'aria-checked="false"' in resp.text
+    db_session.refresh(search)
+    assert search.enabled is False
+
+    search_id = search.id
+    resp = client.post(f"/t/{topic.slug}/searches/{search_id}/delete", headers=hx)
+    assert resp.status_code == 200 and resp.text == ""
+    db_session.expunge_all()
+    assert db_session.get(SavedSearch, search_id) is None
+
+
+def test_add_search_accepts_sources(client, db_session):
+    topic, _ = _topic_with_listing(db_session, with_search=False)
+    client.post(
+        f"/t/{topic.slug}/searches",
+        data={"query": "zelda", "sources": ["ebay"], "price_max": "oops"},
+    )
+    search = _search_of(db_session, topic)
+    assert (search.query, search.sources, search.price_max) == ("zelda", ["ebay"], None)
+
+
+def test_topic_settings_page_renders_edit_controls_and_source_choice(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    html = client.get(f"/t/{topic.slug}/settings").text
+    assert "Modifier la recherche oled" in html
+    assert 'name="sources" value="leboncoin"' in html
+    assert "1 active sur 1" in html
+
+
+def test_topic_title_switches_to_the_other_topics(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    html = client.get(f"/t/{topic.slug}").text
+    assert '<details class="topic-switcher' not in html  # a lone topic keeps a plain title
+
+    db_session.add(Topic(name="Zelda", slug="zelda"))
+    db_session.commit()
+    html = client.get(f"/t/{topic.slug}").text
+    assert '<details class="topic-switcher' in html
+    assert 'href="/t/zelda"' in html
+    assert 'href="/t/switch" class="block' not in html  # the current one is not listed
+
+
+def test_city_lookup_lists_places_with_their_coordinates(client, monkeypatch):
+    calls = []
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [
+                {"display_name": "Rennes, Ille-et-Vilaine, France", "lat": "48.1113387", "lon": "-1.6800198"},
+                {"display_name": "broken", "lat": None, "lon": "x"},
+            ]
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append((url, params, headers))
+        return _Resp()
+
+    monkeypatch.setattr(web_routes.httpx, "get", fake_get)
+    html = client.get("/partials/geocode", params={"q": " Rennes "}).text
+    assert 'data-lat="48.1113" data-lon="-1.68"' in html
+    assert "Rennes, Ille-et-Vilaine, France" in html and "broken" not in html
+    url, params, headers = calls[0]
+    assert "nominatim" in url and params["q"] == "Rennes" and params["limit"] == 5
+    assert headers["User-Agent"].startswith("Enklask")
+
+
+def test_city_lookup_reports_short_queries_and_failures(client, monkeypatch):
+    assert "au moins deux lettres" in client.get("/partials/geocode", params={"q": "R"}).text
+
+    def boom(*args, **kwargs):
+        raise web_routes.httpx.ConnectError("offline")
+
+    monkeypatch.setattr(web_routes.httpx, "get", boom)
+    html = client.get("/partials/geocode", params={"q": "Rennes"}).text
+    assert "indisponible" in html
+
+
+def test_shipping_and_tag_filters_apply_before_pagination(db_session):
+    from app.api.routes import _query_listings
+
+    topic = Topic(name="Consoles", slug="consoles")
+    db_session.add(topic)
+    db_session.flush()
+    # The 4 newest listings match nothing; only the 2 oldest match both filters.
+    for i in range(6):
+        match = i < 2
+        listing = Listing(
+            source="vinted", source_id=f"s{i}", title=f"Item {i}", url=f"https://x/{i}",
+            first_seen=datetime(2026, 11, 1) + timedelta(days=i),
+            shipping_options=["mondial_relay"] if match else ["hand_delivery"],
+        )
+        db_session.add(listing)
+        db_session.flush()
+        db_session.add(ListingTopic(
+            listing_id=listing.id, topic_id=topic.id, tags=["oled", "promo"] if match else ["lite"],
+        ))
+    db_session.commit()
+
+    def titles(**kw):
+        rows = _query_listings(db_session, topic_id=topic.id, limit=2, offset=0, **kw)
+        return [r.title for r in rows]
+
+    assert titles(shipping="mondial_relay") == ["Item 1", "Item 0"]
+    assert titles(tags=["promo"]) == ["Item 1", "Item 0"]
+    assert titles(tags=["oled", "lite"]) == ["Item 5", "Item 4"]  # any tag matches
+    assert titles(shipping="mondial_relay", tags=["lite"]) == []
+    assert len(_query_listings(db_session, topic_id=topic.id, tags=["lite"], limit=10, offset=2)) == 2
+
+
+def test_new_sources_have_labels_and_settings_toggles(client, db_session):
+    assert web_routes.SOURCE_LABELS["easycash"] == "Easy Cash"
+    html = client.get("/settings").text
+    assert 'name="enable_easycash"' in html and 'name="enable_label_emmaus"' in html
+
+    topic, listing = _topic_with_listing(db_session)
+    listing.source = "label_emmaus"
+    db_session.commit()
+    html = client.get(f"/t/{topic.slug}").text
+    assert "Label Emmaüs" in html and "bg-emerald-50 text-emerald-600" in html

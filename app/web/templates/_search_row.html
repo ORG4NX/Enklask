@@ -19,6 +19,9 @@
     {% if search.condition %}
     <span class="text-[10px] text-gray-400 mt-1 inline-block">· État : {{ (condition_labels or {}).get(search.condition, search.condition) }}</span>
     {% endif %}
+    {% if search.sources %}
+    <span class="text-[10px] text-gray-400 mt-1 inline-block">· {% for src in search.sources %}{{ (source_labels or {}).get(src, src) }}{% if not loop.last %}, {% endif %}{% endfor %} seulement</span>
+    {% endif %}
   </div>
 
   {% set rf = refresh if refresh is defined and refresh else none %}
@@ -30,6 +33,16 @@
           {% if rf.detail %}title="{{ rf.detail }}"{% endif %}>{{ rf.message }}{% if rf.ago %} · {{ rf.ago }}{% endif %}</span>
     {% endif %}
   </span>
+
+  <button type="button"
+          hx-get="/t/{{ topic.slug }}/searches/{{ search.id }}/edit"
+          hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML"
+          title="Modifier" aria-label="Modifier la recherche {{ search.name }}"
+          class="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-brand hover:bg-brand-light transition">
+    <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M11.3 2.7a1.5 1.5 0 012.1 2.1L5.5 12.7 2.5 13.5l.8-3 8-7.8z"/>
+    </svg>
+  </button>
 
   <button type="button"
           hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}/refresh"
@@ -53,7 +66,9 @@
         hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML"></span>
   {% endif %}
 
-  <form method="post" action="/t/{{ topic.slug }}/searches/{{ search.id }}/toggle" class="shrink-0">
+  <form method="post" action="/t/{{ topic.slug }}/searches/{{ search.id }}/toggle" class="shrink-0"
+        hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}/toggle"
+        hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML">
     <button type="submit" role="switch" aria-checked="{{ 'true' if search.enabled else 'false' }}"
             title="{% if search.enabled %}Désactiver{% else %}Activer{% endif %}"
             aria-label="{% if search.enabled %}Désactiver{% else %}Activer{% endif %} la recherche {{ search.name }}">
@@ -63,7 +78,9 @@
   </form>
 
   <form method="post" action="/t/{{ topic.slug }}/searches/{{ search.id }}/delete" class="shrink-0"
-        onsubmit="return confirm('Supprimer cette recherche ?')">
+        hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}/delete"
+        hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML"
+        hx-confirm="Supprimer la recherche « {{ search.name }} » ?">
     <button type="submit" title="Supprimer" aria-label="Supprimer la recherche {{ search.name }}"
             class="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">

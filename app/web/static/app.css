@@ -1,13 +1,77 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* Colour tokens. Tailwind's gray / warm / brand-light read these as RGB
+   triplets (see tailwind.config in base.html), so redefining them below is
+   all dark mode takes. */
 :root {
+  color-scheme: light dark;
   --brand: #E63946;
-  --brand-light: #FDE8EA;
-  --bg: #FAF9F7;
-  --card: #FFFFFF;
-  --text: #1A1A2E;
-  --text-soft: #6B7280;
-  --border: #E5E5E5;
+  --brand-light: 253 232 234;
+  --card: 255 255 255;
+  --warm-50: 250 249 247;
+  --warm-100: 243 241 237;
+  --warm-200: 229 229 229;
+  --gray-50: 249 250 251;
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-800: 31 41 55;
+  --gray-900: 17 24 39;
+  --toggle-off: #D1D5DB;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand-light: 74 30 36;
+    --card: 28 30 36;
+    --warm-50: 18 19 23;
+    --warm-100: 38 40 48;
+    --warm-200: 55 58 68;
+    /* Inverted scale: text-gray-900 becomes near-white, bg-gray-100 dark. */
+    --gray-50: 32 34 41;
+    --gray-100: 44 46 55;
+    --gray-200: 60 63 73;
+    --gray-300: 92 96 107;
+    --gray-400: 146 151 163;
+    --gray-500: 165 170 182;
+    --gray-600: 192 196 205;
+    --gray-700: 212 215 222;
+    --gray-800: 229 231 235;
+    --gray-900: 243 244 246;
+    --toggle-off: #4B4F5C;
+  }
+
+  /* White surfaces (cards, header, panels) become the card colour; "html"
+     outranks the utility class Tailwind injects at runtime. */
+  html .bg-white { background-color: rgb(var(--card)); }
+  html .hover\:bg-white:hover { background-color: rgb(var(--gray-100)); }
+
+  /* Pastel badge backgrounds turn into tinted ones. */
+  html .bg-blue-50 { background-color: rgb(59 130 246 / 0.16); }
+  html .bg-teal-50 { background-color: rgb(20 184 166 / 0.16); }
+  html .bg-orange-50 { background-color: rgb(249 115 22 / 0.16); }
+  html .bg-emerald-50 { background-color: rgb(16 185 129 / 0.16); }
+  html .bg-red-50 { background-color: rgb(239 68 68 / 0.16); }
+  html .bg-amber-50 { background-color: rgb(245 158 11 / 0.16); }
+  html .text-blue-600 { color: rgb(96 165 250); }
+  html .text-teal-600 { color: rgb(45 212 191); }
+  html .text-orange-600 { color: rgb(251 146 60); }
+  html .text-emerald-600, html .text-emerald-700 { color: rgb(52 211 153); }
+  html .text-amber-600, html .text-amber-700 { color: rgb(251 191 36); }
+  html .text-red-600 { color: rgb(248 113 113); }
+  html .border-red-200 { border-color: rgb(239 68 68 / 0.35); }
+
+  .listing-card:hover, .topic-card:hover {
+    box-shadow: 0 8px 25px -5px rgba(0,0,0,0.5), 0 4px 10px -6px rgba(0,0,0,0.4);
+  }
+}
+
+body {
+  background-color: rgb(var(--warm-50));
 }
 
 body {
@@ -69,7 +133,7 @@ body {
 .toggle-track {
   width: 36px; height: 20px;
   border-radius: 10px;
-  background: #D1D5DB;
+  background: var(--toggle-off);
   position: relative;
   cursor: pointer;
   transition: background 0.2s;
@@ -110,4 +174,4 @@ input:checked + .toggle-track::after {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--gray-300)); border-radius: 3px; }

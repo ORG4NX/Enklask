@@ -2,7 +2,9 @@
 {% set source_styles = {
   "ebay": "bg-blue-50 text-blue-600",
   "vinted": "bg-teal-50 text-teal-600",
-  "leboncoin": "bg-orange-50 text-orange-600"
+  "leboncoin": "bg-orange-50 text-orange-600",
+  "easycash": "bg-amber-50 text-amber-600",
+  "label_emmaus": "bg-emerald-50 text-emerald-600"
 } %}
 <div id="card-{{ listing.id }}"
      class="listing-card relative bg-white rounded-2xl border border-warm-200 overflow-hidden flex flex-col
@@ -28,7 +30,7 @@
     {% endif %}
     <span class="source-pill absolute top-2.5 left-2.5 px-2 py-0.5 rounded-lg font-semibold backdrop-blur-sm
                  {{ source_styles.get(listing.source, 'bg-gray-50 text-gray-600') }}">
-      {{ listing.source }}
+      {{ listing.source | source_label }}
     </span>
     {% if is_new %}
     <span class="source-pill absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-lg font-semibold bg-brand text-white shadow-sm">

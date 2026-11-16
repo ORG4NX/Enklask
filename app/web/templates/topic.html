@@ -4,11 +4,30 @@
 <!-- Breadcrumb + header -->
 <div class="flex items-center justify-between mb-5">
   <div class="flex items-center gap-3 min-w-0">
-    <a href="/" class="text-gray-400 hover:text-gray-600 transition shrink-0">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+    <a href="/" class="text-gray-400 hover:text-gray-600 transition shrink-0" title="Accueil" aria-label="Accueil">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
     </a>
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="text-gray-300 shrink-0"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="text-gray-300 shrink-0" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg>
+    {% set other_topics = topics | rejectattr("id", "equalto", topic.id) | list %}
+    {% if other_topics %}
+    {# Topic switcher: the title opens the list of the other topics. #}
+    <details class="topic-switcher relative min-w-0">
+      <summary class="list-none flex items-center gap-1.5 cursor-pointer rounded-xl -mx-2 px-2 py-1 hover:bg-warm-100 transition [&::-webkit-details-marker]:hidden"
+               aria-label="Changer de topic ({{ topic.name }})">
+        <h1 class="text-xl font-bold text-gray-900 truncate">{{ topic.name }}</h1>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             class="text-gray-400 shrink-0 transition-transform [details[open]_&]:rotate-180" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+      </summary>
+      <nav class="absolute left-0 top-full mt-1 z-40 min-w-[14rem] max-w-[20rem] max-h-[60vh] overflow-y-auto bg-white rounded-xl border border-warm-200 shadow-lg py-1"
+           aria-label="Autres topics">
+        {% for t in other_topics %}
+        <a href="/t/{{ t.slug }}" class="block px-3 py-2 text-sm text-gray-700 hover:bg-warm-50 hover:text-brand truncate">{{ t.name }}</a>
+        {% endfor %}
+      </nav>
+    </details>
+    {% else %}
     <h1 class="text-xl font-bold text-gray-900 truncate">{{ topic.name }}</h1>
+    {% endif %}
     <span class="text-sm font-medium text-gray-400 shrink-0 whitespace-nowrap">{{ listing_count }} annonce{{ 's' if listing_count != 1 else '' }}</span>
   </div>
   <div class="flex items-center gap-2 shrink-0">
@@ -63,7 +82,7 @@
   <select name="source" aria-label="Source" class="filter-select text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 text-gray-700 font-medium focus:ring-2 focus:ring-brand/20 focus:outline-none">
     <option value="">Toutes sources</option>
     {% for s in sources %}
-    <option value="{{ s }}" {% if selected.source == s %}selected{% endif %}>{{ s | capitalize }}</option>
+    <option value="{{ s }}" {% if selected.source == s %}selected{% endif %}>{{ s | source_label }}</option>
     {% endfor %}
   </select>
 

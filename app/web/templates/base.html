@@ -7,12 +7,21 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
+    // Neutral colours read CSS variables (see app.css) so the whole UI follows
+    // the system light/dark preference without per-template dark: classes.
+    function _tw(name) { return 'rgb(var(--' + name + ') / <alpha-value>)'; }
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            brand:  { DEFAULT: '#E63946', light: '#FDE8EA', dark: '#C62828' },
-            warm:   { 50: '#FAF9F7', 100: '#F3F1ED', 200: '#E5E5E5' },
+            brand:  { DEFAULT: '#E63946', light: _tw('brand-light'), dark: '#C62828' },
+            warm:   { 50: _tw('warm-50'), 100: _tw('warm-100'), 200: _tw('warm-200') },
+            gray: {
+              50: _tw('gray-50'), 100: _tw('gray-100'), 200: _tw('gray-200'),
+              300: _tw('gray-300'), 400: _tw('gray-400'), 500: _tw('gray-500'),
+              600: _tw('gray-600'), 700: _tw('gray-700'), 800: _tw('gray-800'),
+              900: _tw('gray-900'),
+            },
           },
           fontFamily: {
             sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
@@ -131,7 +140,7 @@
   <script>
     var TOAST_STYLES = {
       ok: 'bg-emerald-600 text-white', warn: 'bg-amber-500 text-white',
-      error: 'bg-red-600 text-white', muted: 'bg-gray-800 text-white'
+      error: 'bg-red-600 text-white', muted: 'bg-[#23252D] text-white ring-1 ring-white/10'
     };
     function showToast(detail) {
       if (!detail || !detail.message) return;
@@ -173,9 +182,25 @@
     }
     document.body.addEventListener('toast', function (e) { showToast(e.detail); });
 
+    function closeSwitchers(except) {
+      document.querySelectorAll('details.topic-switcher[open]').forEach(function (d) {
+        if (d !== except) d.removeAttribute('open');
+      });
+    }
+    document.addEventListener('click', function (e) {
+      closeSwitchers(e.target.closest && e.target.closest('details.topic-switcher'));
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      var open = document.querySelector('details.topic-switcher[open]');
+      if (open) { open.removeAttribute('open'); open.querySelector('summary').focus(); }
+    });
+
+    var PV_SRC_LABELS = {{ source_labels | tojson }};
     var PV_SRC_STYLES = {
       ebay: 'bg-blue-50 text-blue-600', vinted: 'bg-teal-50 text-teal-600',
-      leboncoin: 'bg-orange-50 text-orange-600'
+      leboncoin: 'bg-orange-50 text-orange-600',
+      easycash: 'bg-amber-50 text-amber-600', label_emmaus: 'bg-emerald-50 text-emerald-600'
     };
     var _pv = { photos: [], idx: 0 };
     var _pvToken = 0;
@@ -189,7 +214,7 @@
       _pv = { photos: d.photos || [], idx: 0 };
 
       var src = document.getElementById('pv-source');
-      src.textContent = d.source || '';
+      src.textContent = PV_SRC_LABELS[d.source] || d.source || '';
       src.className = 'self-start px-2 py-0.5 rounded-lg text-xs font-semibold ' +
         (PV_SRC_STYLES[d.source] || 'bg-gray-100 text-gray-600');
 

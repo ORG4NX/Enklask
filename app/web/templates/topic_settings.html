@@ -42,7 +42,8 @@
   <section class="bg-white rounded-2xl border border-warm-200 overflow-hidden mb-4">
     <div class="px-5 py-4 border-b border-warm-200 flex items-center justify-between">
       <h2 class="font-semibold text-gray-900">Recherches</h2>
-      <span class="text-xs text-gray-400">{{ topic.searches | length }} active{{ 's' if topic.searches | length != 1 else '' }}</span>
+      {% set n_active = topic.searches | selectattr("enabled") | list | length %}
+      <span class="text-xs text-gray-400">{{ n_active }} active{{ 's' if n_active != 1 else '' }} sur {{ topic.searches | length }}</span>
     </div>
 
     {% if topic.searches %}
@@ -84,6 +85,17 @@
           <option value="{{ key }}">{{ label }}</option>
           {% endfor %}
         </select>
+        <fieldset>
+          <legend class="text-xs text-gray-500">Sources <span class="text-gray-400">(aucune = toutes)</span></legend>
+          <div class="flex flex-wrap gap-2 mt-1">
+            {% for key, label in source_labels.items() %}
+            <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 bg-white border border-warm-200 rounded-xl px-3 py-2 cursor-pointer has-[:checked]:border-brand/40 has-[:checked]:bg-brand-light">
+              <input type="checkbox" name="sources" value="{{ key }}" class="accent-[#E63946]" />
+              {{ label }}
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
         <button type="submit"
                 class="block text-sm font-semibold text-brand hover:text-brand-dark transition-colors">
           + Ajouter

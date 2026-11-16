@@ -52,10 +52,30 @@
                    class="bg-warm-50 border-0 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
           </label>
         </div>
-        <button type="button" id="geolocate-btn" onclick="geolocate()"
-                class="text-sm text-brand font-medium hover:underline">
-          Me localiser
-        </button>
+        <div>
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Position de référence</span>
+          {# Not a nested <form> (we are inside the settings form): Enter is
+             caught so it searches instead of saving the settings. #}
+          <div class="mt-1.5 flex flex-wrap items-center gap-2">
+            <input type="search" name="q" id="city-query" placeholder="Ville ou code postal (ex : Rennes)"
+                   aria-label="Rechercher une ville" autocomplete="off"
+                   onkeydown="if (event.key === 'Enter') { event.preventDefault(); document.getElementById('city-search-btn').click(); }"
+                   class="flex-1 min-w-[12rem] bg-warm-50 border-0 rounded-xl px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
+            <button type="button" id="city-search-btn"
+                    hx-get="/partials/geocode" hx-include="#city-query" hx-target="#city-results"
+                    hx-indicator="#city-search-btn"
+                    class="text-sm font-semibold bg-warm-100 hover:bg-warm-200 text-gray-700 px-3 py-2 rounded-xl transition-colors">
+              Chercher
+            </button>
+            <button type="button" id="geolocate-btn" onclick="geolocate()"
+                    class="text-sm text-brand font-medium hover:underline">
+              Me localiser
+            </button>
+          </div>
+          <div id="city-results" class="mt-2" aria-live="polite"></div>
+          <p id="city-chosen" class="hidden mt-1.5 text-xs text-emerald-700"></p>
+          <p class="mt-1.5 text-xs text-gray-400">Sert au calcul des distances. Pense à enregistrer après avoir choisi.</p>
+        </div>
 
         <div class="pt-3 border-t border-warm-200">
           <label class="flex flex-col gap-1.5">
@@ -100,6 +120,8 @@
 
         {{ source_toggle("vinted", "Vinted", "text-teal-600", "aucune clé requise") }}
         {{ source_toggle("leboncoin", "Leboncoin", "text-orange-600", "aucune clé requise") }}
+        {{ source_toggle("easycash", "Easy Cash", "text-amber-600", "magasins d'occasion, aucune clé requise") }}
+        {{ source_toggle("label_emmaus", "Label Emmaüs", "text-emerald-600", "boutiques solidaires, aucune clé requise") }}
         <!-- eBay -->
         <div class="px-5 py-4">
           <label class="flex items-center justify-between cursor-pointer">
@@ -181,6 +203,14 @@
 </div>
 
 <script>
+function pickPlace(btn) {
+  document.getElementById('home_lat').value = btn.dataset.lat;
+  document.getElementById('home_lon').value = btn.dataset.lon;
+  var chosen = document.getElementById('city-chosen');
+  chosen.textContent = 'Position choisie : ' + btn.dataset.label;
+  chosen.classList.remove('hidden');
+  document.getElementById('city-results').innerHTML = '';
+}
 function geolocate() {
   var btn = document.getElementById('geolocate-btn');
   if (!navigator.geolocation) { btn.textContent = 'Non supporté'; return; }
