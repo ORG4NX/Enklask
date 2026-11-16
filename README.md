@@ -179,8 +179,13 @@ parsers (no live network needed).
   every `live_feed_interval_seconds` (60 by default, 30 minimum), spread evenly so N
   searches mean one request every interval/N. New ads are stored and notified; the
   first results of a new search are only a baseline. A refusal pauses the feed with
-  exponential backoff (up to 15 min). Only Vinted is watched live: frequent requests
-  would get the IP blocked by Leboncoin's DataDome.
+  exponential backoff (up to 15 min).
+  Leboncoin can join it (`enable_live_feed_leboncoin`, off by default) on its own,
+  longer cycle (`live_feed_leboncoin_interval_seconds`, 300 by default, 180 minimum).
+  That lane uses `curl_cffi` only, never the Camoufox browser, stands aside while a
+  poll runs, and pauses up to an hour after a DataDome refusal. Each request still
+  counts towards the IP's bot score: set `leboncoin_proxy` before turning it on from
+  a residential connection. eBay, Easy Cash and Label Emmaüs stay on the regular poll.
 - **Leboncoin** — set `ENABLE_LEBONCOIN=true`. Reuses a coherent `curl_cffi` browser session
   for lightweight searches. If DataDome challenges it (at the homepage warm-up or the search),
   Enklask hands that search to a persistent Camoufox session that runs the JavaScript device

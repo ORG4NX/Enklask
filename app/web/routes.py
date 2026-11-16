@@ -73,6 +73,33 @@ def _timeago(value) -> str:
 templates.env.filters["timeago"] = _timeago
 
 
+def _timeuntil(value) -> str:
+    """'dans 4 min' for a future aware/naive-UTC datetime."""
+    if not value:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    secs = (value - datetime.now(timezone.utc)).total_seconds()
+    if secs < 60:
+        return "dans moins d'une minute"
+    mins = secs / 60
+    if mins < 60:
+        return f"dans {int(mins)} min"
+    return f"dans {int(mins // 60)} h {int(mins % 60):02d}"
+
+
+def _duration(seconds) -> str:
+    """60 -> '60 s', 300 -> '5 min' (whole minutes from two minutes up)."""
+    seconds = int(seconds or 0)
+    if seconds >= 120 and seconds % 60 == 0:
+        return f"{seconds // 60} min"
+    return f"{seconds} s"
+
+
+templates.env.filters["timeuntil"] = _timeuntil
+templates.env.filters["duration"] = _duration
+
+
 def _preview_history(value) -> list:
     """Keep the modal compact and suppress obviously corrupted price trails."""
     history = value if isinstance(value, list) else []
@@ -1288,7 +1315,7 @@ def _live_context(session: Session, request: Request, after: int | None = None) 
         cursor = after
     else:
         cursor = session.scalar(select(func.max(Listing.id))) or 0
-    return {"request": request, "rows": rows, "cursor": cursor, "feed": live_feed.status()}
+    return {"request": request, "rows": rows, "cursor": cursor, "lanes": live_feed.status()}
 
 
 @router.get("/live", response_class=HTMLResponse)
@@ -1376,7 +1403,8 @@ def settings_page(request: Request):
 _SETTINGS_INT_FIELDS = [
     ("poll_interval_minutes", "L'intervalle", 1, None),
     ("notify_max_per_poll", "Le maximum de notifications par poll", 1, None),
-    ("live_feed_interval_seconds", "L'intervalle du direct", 30, None),
+    ("live_feed_interval_seconds", "L'intervalle du direct Vinted", 30, None),
+    ("live_feed_leboncoin_interval_seconds", "L'intervalle du direct Leboncoin", 180, None),
 ]
 _SETTINGS_FLOAT_FIELDS = [
     ("home_lat", "La latitude", -90.0, 90.0),
@@ -1392,6 +1420,7 @@ def _validate_settings_form(form) -> tuple[dict, list[str]]:
     for f in (
         "enable_ebay", "enable_vinted", "enable_leboncoin", "enable_easycash",
         "enable_label_emmaus", "notify_on_first_run", "enable_live_feed",
+        "enable_live_feed_leboncoin",
     ):
         updates[f] = f in form
 

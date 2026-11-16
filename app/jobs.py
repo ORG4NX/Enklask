@@ -66,6 +66,11 @@ class RefreshJobs:
         job = self.get(key)
         return job is not None and job.running
 
+    def any_running(self) -> bool:
+        """Whether any refresh (global, topic or search) is in flight."""
+        with self._lock:
+            return any(job.running for job in self._jobs.values())
+
     def start(self, key: str, fn: Callable[[], object]) -> Job:
         """Run ``fn`` in a daemon thread under ``key``.
 

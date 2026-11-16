@@ -144,6 +144,26 @@ class LeboncoinSource(BaseSource):
         ads = data.get("ads") or []
         return [self._to_raw(ad) for ad in ads]
 
+    def search_live(self, query: SearchQuery) -> list[RawListing]:
+        """Lightweight search for the live feed: curl only, never the browser.
+
+        The live feed asks far more often than the poll. Escalating each
+        DataDome challenge to Camoufox there would keep a browser busy and
+        keep provoking challenges, which is what taints the IP; instead the
+        challenge is raised and the live feed backs off. Also refuses while
+        curl is cooling down or the poll has just needed the browser.
+        """
+        if not HAVE_CURL_CFFI:
+            raise DataDomeBlocked("curl_cffi unavailable; Leboncoin live feed disabled")
+        with _transport_lock:
+            if _browser_preferred_until > time.monotonic():
+                raise DataDomeBlocked(
+                    "DataDome recently required the browser; live check skipped",
+                    challenge=True,
+                )
+        data = self._post_curl(self._build_body(query))
+        return [self._to_raw(ad) for ad in data.get("ads") or []]
+
     def _build_body(self, query: SearchQuery) -> dict:
         sort_by, sort_order = _SORT.get(query.sort, ("time", "desc"))
         filters: dict = {

@@ -58,6 +58,10 @@ class Settings(BaseModel):
     # short interval, between the regular polls (see app.livefeed).
     enable_live_feed: bool = True
     live_feed_interval_seconds: int = 60
+    # Leboncoin in the live feed: off by default and on a longer cycle, since
+    # DataDome scores request frequency per IP (see leboncoin_proxy below).
+    enable_live_feed_leboncoin: bool = False
+    live_feed_leboncoin_interval_seconds: int = 300
 
     # Easy Cash and Label Emmaüs (unofficial, public search pages, no key)
     easycash_base_url: str = "https://bons-plans.easycash.fr"

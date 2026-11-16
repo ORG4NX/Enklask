@@ -1,22 +1,28 @@
-"""Live feed: watch the saved searches on Vinted between regular polls.
+"""Live feed: watch the saved searches between regular polls.
 
 The scheduled poll runs every few minutes across every source. The live feed
-re-checks each enabled saved search that targets Vinted on its own, much
-shorter cycle, through the catalogue API (newest first), and stores whatever it
-has not seen yet. The detection follows Vintrack's monitors
-(github.com/JakobAIOdev/Vintrack-Vinted-Monitor, MIT): poll the newest page,
-keep the unknown ids, alert on those.
+re-checks each enabled saved search on a shorter cycle, newest first, stores
+what it has not seen yet and notifies it. The detection follows Vintrack's
+monitors (github.com/JakobAIOdev/Vintrack-Vinted-Monitor, MIT): poll the
+newest page, keep the unknown ids, alert on those.
 
-* Searches are spread evenly over the interval, so N searches mean one request
-  every interval/N seconds rather than a burst.
-* The first results of a search are a baseline: stored, never notified, so
-  adding a search does not flood the Discord channel with old ads.
-* A failure pauses the whole feed with exponential backoff (Vinted refusals
-  are per IP, retrying other searches at once would only make it worse).
+Each source is a *lane* with its own thread, interval and backoff, so a
+blocked source never holds up the others:
 
-Only Vinted is watched live: its API is a cheap JSON request. Leboncoin's
-DataDome scores frequent requests and would block the IP for every device on
-it; eBay, Easy Cash and Label Emmaüs keep the scheduled poll.
+* **Vinted** — the catalogue JSON API, a cheap request: every 60 s by default.
+* **Leboncoin** — off by default, every 5 min at least 3. It goes through
+  ``curl_cffi`` only and never escalates to the Camoufox browser; it also
+  stands aside while a poll runs. DataDome scores request frequency per IP,
+  and repeated challenges taint the IP for every device behind it.
+
+Shared rules:
+
+* Searches are spread evenly over the interval (N searches -> one request
+  every interval/N), with +-20 % jitter.
+* The first results of a search on a source are a baseline: stored, never
+  notified, so adding a search does not flood the Discord channel.
+* A failure pauses the lane with exponential backoff: refusals are per IP, so
+  trying the next search at once would only make it worse.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ import logging
 import random
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -34,20 +41,43 @@ from .config import get_settings
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
 from .enums import Source
+from .jobs import jobs
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
 from .sources.base import SearchQuery
 
 logger = logging.getLogger(__name__)
 
-MIN_INTERVAL_SECONDS = 30
-MAX_BACKOFF_SECONDS = 15 * 60
 # Settings and the search list are re-read at least this often while idle.
 _IDLE_RECHECK_SECONDS = 15.0
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass(frozen=True)
+class LaneSpec:
+    """How one source takes part in the live feed."""
+
+    source: Source
+    label: str
+    enabled_setting: str         # live feed toggle for this source
+    source_setting: str          # the source itself must be on too
+    interval_setting: str
+    min_interval: int
+    max_backoff: int
+    fetch: Callable[[SearchQuery], list]
+    # Stand aside while a poll is running (avoids doubling requests).
+    yield_to_polls: bool = False
+
+    def enabled(self, settings) -> bool:
+        return bool(getattr(settings, self.enabled_setting)) and bool(
+            getattr(settings, self.source_setting)
+        )
+
+    def interval(self, settings) -> int:
+        return max(int(getattr(settings, self.interval_setting)), self.min_interval)
 
 
 @dataclass
@@ -75,22 +105,24 @@ class SearchStatus:
 
 
 @dataclass
-class FeedStatus:
+class LaneStatus:
+    source: str = ""
+    label: str = ""
     enabled: bool = False
     running: bool = False
     interval_seconds: int = 0
     watched: int | None = None  # None until the first round has listed them
-    started_at: datetime | None = None
     last_check_at: datetime | None = None
     last_new_at: datetime | None = None
     new_since_start: int = 0
     last_error: str = ""
     paused_until: datetime | None = None
+    yielding: bool = False      # waiting for a running poll to finish
     searches: dict[int, SearchStatus] = field(default_factory=dict)
 
 
-def watched_searches() -> list[WatchedSearch]:
-    """Enabled searches that include Vinted (no source ticked = all)."""
+def watched_searches(source: Source = Source.VINTED) -> list[WatchedSearch]:
+    """Enabled searches that include ``source`` (no source ticked = all)."""
     out: list[WatchedSearch] = []
     with session_scope() as session:
         rows = session.execute(
@@ -101,7 +133,7 @@ def watched_searches() -> list[WatchedSearch]:
         ).all()
         for search, topic in rows:
             targeted = search.sources or []
-            if targeted and Source.VINTED.value not in targeted:
+            if targeted and source.value not in targeted:
                 continue
             out.append(WatchedSearch(
                 id=search.id, name=search.name or search.query, query=search.query,
@@ -113,15 +145,17 @@ def watched_searches() -> list[WatchedSearch]:
     return out
 
 
-class LiveFeed:
-    def __init__(self, source_factory=None) -> None:
-        self._source_factory = source_factory or _vinted_source
+class Lane:
+    """One source's live loop: its own thread, interval, backoff and status."""
+
+    def __init__(self, spec: LaneSpec) -> None:
+        self.spec = spec
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
         self._failures = 0
-        self._status = FeedStatus()
+        self._status = LaneStatus(source=spec.source.value, label=spec.label)
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -130,10 +164,10 @@ class LiveFeed:
             if self._thread is not None and self._thread.is_alive():
                 return
             self._stop.clear()
-            self._status.started_at = _utcnow()
-            self._thread = threading.Thread(target=self._run, name="live-feed", daemon=True)
+            self._thread = threading.Thread(
+                target=self._run, name=f"live-{self.spec.source.value}", daemon=True
+            )
             self._thread.start()
-        logger.info("Live feed started")
 
     def stop(self) -> None:
         self._stop.set()
@@ -144,19 +178,16 @@ class LiveFeed:
         self._thread = None
 
     def wake(self) -> None:
-        """Re-read the settings and searches now (after a settings change)."""
         self._wake.set()
 
-    def status(self) -> FeedStatus:
+    def status(self) -> LaneStatus:
+        settings = get_settings()
         with self._lock:
-            settings = get_settings()
-            self._status.enabled = bool(settings.enable_live_feed and settings.enable_vinted)
-            self._status.interval_seconds = interval_seconds()
-            self._status.running = self._thread is not None and self._thread.is_alive()
-            return FeedStatus(**{
-                **self._status.__dict__,
-                "searches": dict(self._status.searches),
-            })
+            st = self._status
+            st.enabled = self.spec.enabled(settings)
+            st.interval_seconds = self.spec.interval(settings)
+            st.running = self._thread is not None and self._thread.is_alive()
+            return LaneStatus(**{**st.__dict__, "searches": dict(st.searches)})
 
     # -- loop ----------------------------------------------------------------
 
@@ -171,32 +202,42 @@ class LiveFeed:
             try:
                 self._round()
             except Exception:  # pragma: no cover - the loop must never die
-                logger.exception("Live feed round failed")
+                logger.exception("Live feed (%s) round failed", self.spec.label)
                 self._wait(_IDLE_RECHECK_SECONDS)
 
     def _round(self) -> None:
         settings = get_settings()
-        if not (settings.enable_live_feed and settings.enable_vinted):
+        if not self.spec.enabled(settings):
             self._wait(_IDLE_RECHECK_SECONDS)
             return
         paused = self._paused_for()
         if paused > 0:
             self._wait(min(paused, _IDLE_RECHECK_SECONDS))
             return
-        searches = watched_searches()
+        if self._should_yield():
+            self._wait(_IDLE_RECHECK_SECONDS)
+            return
+        searches = watched_searches(self.spec.source)
         with self._lock:
             self._status.watched = len(searches)
         if not searches:
             self._wait(_IDLE_RECHECK_SECONDS)
             return
-        spacing = interval_seconds() / len(searches)
+        spacing = self.spec.interval(settings) / len(searches)
         for search in searches:
-            if self._stop.is_set():
+            if self._stop.is_set() or not self.spec.enabled(get_settings()):
                 return
+            if self._should_yield():
+                return  # a poll started: it covers this source, start over after
             if not self.check(search):
                 return  # paused: start over once the backoff is spent
-            # +-20 % jitter so requests never fall on an exact rhythm.
             self._wait(spacing * random.uniform(0.8, 1.2))
+
+    def _should_yield(self) -> bool:
+        yielding = self.spec.yield_to_polls and jobs.any_running()
+        with self._lock:
+            self._status.yielding = yielding
+        return yielding
 
     def _paused_for(self) -> float:
         with self._lock:
@@ -209,20 +250,19 @@ class LiveFeed:
 
     def check(self, search: WatchedSearch) -> bool:
         """Fetch one search, store and notify the new ads. False on failure."""
-        source = self._source_factory()
         query = SearchQuery(
             query=search.query, price_min=search.price_min,
             price_max=search.price_max, condition=search.condition,
         )
         started = time.monotonic()
         try:
-            raws = source.search_api(query)
+            raws = self.spec.fetch(query)
         except Exception as exc:  # noqa: BLE001
             self._record_failure(search, exc)
             return False
 
         with write_lock, session_scope() as session:
-            baseline = _is_baseline(session, search.id)
+            baseline = _is_baseline(session, search.id, self.spec.source)
             new_items: list[NotifyItem] = []
             for raw in raws:
                 listing = upsert_listing(
@@ -235,7 +275,8 @@ class LiveFeed:
         self._record_success(search, len(new_items))
         if new_items:
             logger.info(
-                "Live feed: %d new on '%s'%s (%.1fs)", len(new_items), search.name,
+                "Live feed (%s): %d new on '%s'%s (%.1fs)", self.spec.label,
+                len(new_items), search.name,
                 " (baseline, not notified)" if baseline else "", time.monotonic() - started,
             )
         if new_items and not baseline:
@@ -260,38 +301,83 @@ class LiveFeed:
 
     def _record_failure(self, search: WatchedSearch, exc: Exception) -> None:
         message = str(exc) or type(exc).__name__
+        interval = self.spec.interval(get_settings())
         with self._lock:
             self._failures += 1
-            delay = min(interval_seconds() * 2 ** (self._failures - 1), MAX_BACKOFF_SECONDS)
+            delay = min(interval * 2 ** (self._failures - 1), self.spec.max_backoff)
             st = self._status
             st.last_check_at = _utcnow()
             st.last_error = message
-            st.paused_until = _utcnow() + timedelta(seconds=delay)
+            st.paused_until = st.last_check_at + timedelta(seconds=delay)
             st.searches[search.id] = SearchStatus(st.last_check_at, 0, message)
         logger.warning(
-            "Live feed: '%s' failed (%s); pausing %ds", search.name, message, delay
+            "Live feed (%s): '%s' failed (%s); pausing %ds",
+            self.spec.label, search.name, message, delay,
         )
 
 
-def _is_baseline(session, search_id: int) -> bool:
-    """True while this search has never stored a Vinted ad (first fetch)."""
+def _is_baseline(session, search_id: int, source: Source) -> bool:
+    """True while this search has never stored an ad from ``source``."""
     count = session.scalar(
         select(func.count())
         .select_from(ListingTopic)
         .join(Listing, Listing.id == ListingTopic.listing_id)
-        .where(ListingTopic.search_id == search_id, Listing.source == Source.VINTED.value)
+        .where(ListingTopic.search_id == search_id, Listing.source == source.value)
     )
     return not count
 
 
-def interval_seconds() -> int:
-    return max(int(get_settings().live_feed_interval_seconds), MIN_INTERVAL_SECONDS)
-
-
-def _vinted_source():
+def _fetch_vinted(query: SearchQuery) -> list:
     from .sources.vinted import VintedSource
 
-    return VintedSource()
+    return VintedSource().search_api(query)
+
+
+def _fetch_leboncoin(query: SearchQuery) -> list:
+    from .sources.leboncoin import LeboncoinSource
+
+    return LeboncoinSource().search_live(query)
+
+
+VINTED_LANE = LaneSpec(
+    source=Source.VINTED, label="Vinted",
+    enabled_setting="enable_live_feed", source_setting="enable_vinted",
+    interval_setting="live_feed_interval_seconds", min_interval=30,
+    max_backoff=15 * 60, fetch=_fetch_vinted,
+)
+LEBONCOIN_LANE = LaneSpec(
+    source=Source.LEBONCOIN, label="Leboncoin",
+    enabled_setting="enable_live_feed_leboncoin", source_setting="enable_leboncoin",
+    interval_setting="live_feed_leboncoin_interval_seconds", min_interval=180,
+    max_backoff=60 * 60, fetch=_fetch_leboncoin, yield_to_polls=True,
+)
+
+
+class LiveFeed:
+    """Every lane together (one thread each)."""
+
+    def __init__(self, specs: list[LaneSpec] | None = None) -> None:
+        self.lanes = [Lane(spec) for spec in (specs or [VINTED_LANE, LEBONCOIN_LANE])]
+
+    def lane(self, source: Source) -> Lane:
+        return next(lane for lane in self.lanes if lane.spec.source is source)
+
+    def start(self) -> None:
+        for lane in self.lanes:
+            lane.start()
+        logger.info("Live feed started: %s", ", ".join(l.spec.label for l in self.lanes))
+
+    def stop(self) -> None:
+        for lane in self.lanes:
+            lane.stop()
+
+    def wake(self) -> None:
+        """Re-read the settings and searches now (after a settings change)."""
+        for lane in self.lanes:
+            lane.wake()
+
+    def status(self) -> list[LaneStatus]:
+        return [lane.status() for lane in self.lanes]
 
 
 live_feed = LiveFeed()

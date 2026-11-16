@@ -1,3 +1,5 @@
+import dataclasses
+from datetime import datetime, timezone
 from contextlib import contextmanager
 
 import pytest
@@ -9,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app import livefeed
 from app.db import get_session
 from app.enums import Source
-from app.livefeed import LiveFeed, watched_searches
+from app.livefeed import Lane, LiveFeed, watched_searches
 from app.main import app
 from app.models import Base, Listing, ListingTopic, SavedSearch, Topic
 from app.sources.base import RawListing
@@ -56,22 +58,26 @@ def notified(monkeypatch):
     return sent
 
 
-def _raw(item_id, title=None, price=10.0):
+def _raw(item_id, title=None, price=10.0, source=Source.VINTED):
     return RawListing(
-        source=Source.VINTED, source_id=str(item_id), title=title or f"Ad {item_id}",
-        url=f"https://www.vinted.fr/items/{item_id}", price=price,
+        source=source, source_id=str(item_id), title=title or f"Ad {item_id}",
+        url=f"https://example.test/items/{item_id}", price=price,
     )
 
 
-class _Source:
+class _Fetch:
     def __init__(self, *rounds, error=None):
         self.rounds, self.error, self.queries = list(rounds), error, []
 
-    def search_api(self, query):
+    def __call__(self, query):
         self.queries.append(query)
         if self.error:
             raise self.error
         return self.rounds.pop(0)
+
+
+def _lane(fetch, base=livefeed.VINTED_LANE):
+    return Lane(dataclasses.replace(base, fetch=fetch))
 
 
 def _seed(make, sources=None):
@@ -88,58 +94,104 @@ def _seed(make, sources=None):
         return topic.id, search.id
 
 
-def test_watched_searches_keep_only_those_reaching_vinted(factory):
+def test_watched_searches_keep_only_those_reaching_the_source(factory):
     _seed(factory)
-    _seed_other = SavedSearch(topic_id=1, name="LBC", query="x", sources=["leboncoin"])
+    lbc = SavedSearch(topic_id=1, name="LBC", query="x", sources=["leboncoin"])
     disabled = SavedSearch(topic_id=1, name="Off", query="y", enabled=False)
     targeted = SavedSearch(topic_id=1, name="Vinted", query="z", sources=["vinted"])
     with factory() as session:
-        session.add_all([_seed_other, disabled, targeted])
+        session.add_all([lbc, disabled, targeted])
         session.commit()
 
-    names = [s.name for s in watched_searches()]
-    assert names == ["New 3DS", "Vinted"]
+    assert [s.name for s in watched_searches(Source.VINTED)] == ["New 3DS", "Vinted"]
+    assert [s.name for s in watched_searches(Source.LEBONCOIN)] == ["New 3DS", "LBC"]
 
 
 def test_first_results_are_a_baseline_then_new_ads_are_notified(factory, notified):
     _, search_id = _seed(factory)
-    source = _Source([_raw(1), _raw(2)], [_raw(3, "Fresh 3DS"), _raw(2), _raw(1)])
-    feed = LiveFeed(source_factory=lambda: source)
+    fetch = _Fetch([_raw(1), _raw(2)], [_raw(3, "Fresh 3DS"), _raw(2), _raw(1)])
+    lane = _lane(fetch)
     search = watched_searches()[0]
 
-    assert feed.check(search) is True
+    assert lane.check(search) is True
     assert notified == []  # baseline: stored, not announced
-    assert feed.check(search) is True
+    assert lane.check(search) is True
     assert notified == [["Fresh 3DS"]]
 
-    assert source.queries[0].query == "New 3DS" and source.queries[0].price_max == 150.0
+    assert fetch.queries[0].query == "New 3DS" and fetch.queries[0].price_max == 150.0
     with factory() as session:
         assert session.scalar(select(Listing).where(Listing.source_id == "3")) is not None
         link = session.scalar(select(ListingTopic).where(ListingTopic.search_id == search_id))
         assert link.tags == ["3ds"]
-    status = feed.status()
+    status = lane.status()
     assert status.new_since_start == 3 and status.searches[search_id].last_new_count == 1
 
 
-def test_a_failure_pauses_the_feed_with_backoff(factory, notified):
+def test_baseline_is_per_source(factory, notified):
     _seed(factory)
-    feed = LiveFeed(source_factory=lambda: _Source(error=RuntimeError("Vinted catalogue API answered 403")))
+    search = watched_searches()[0]
+    _lane(_Fetch([_raw(1)])).check(search)
+    # Vinted already has ads for this search; Leboncoin's first batch is still
+    # a baseline and must not be announced.
+    lbc = _lane(_Fetch([_raw(9, source=Source.LEBONCOIN)]), livefeed.LEBONCOIN_LANE)
+    assert lbc.check(search) is True
+    assert notified == []
 
-    assert feed.check(watched_searches()[0]) is False
-    status = feed.status()
-    assert "403" in status.last_error
-    assert status.paused_until is not None
-    assert feed._paused_for() > 0
+
+def test_a_failure_pauses_only_that_lane_with_backoff(factory, notified):
+    _seed(factory)
+    lane = _lane(_Fetch(error=RuntimeError("HTTP 403 DataDome device check")),
+                 livefeed.LEBONCOIN_LANE)
+    search = watched_searches()[0]
+
+    assert lane.check(search) is False
+    first = lane.status().paused_until
+    assert "DataDome" in lane.status().last_error and lane._paused_for() > 0
+    lane.check(search)
+    assert lane.status().paused_until > first  # backoff doubles
+    vinted = _lane(_Fetch([_raw(1)]))
+    assert vinted.status().paused_until is None
 
 
 def test_round_is_idle_when_disabled(factory, monkeypatch):
     _seed(factory)
     settings = livefeed.get_settings().model_copy(update={"enable_live_feed": False})
     monkeypatch.setattr(livefeed, "get_settings", lambda: settings)
-    feed = LiveFeed(source_factory=lambda: pytest.fail("no request while disabled"))
-    monkeypatch.setattr(feed, "_wait", lambda seconds: None)
-    feed._round()
-    assert feed.status().enabled is False
+    lane = _lane(lambda q: pytest.fail("no request while disabled"))
+    monkeypatch.setattr(lane, "_wait", lambda seconds: None)
+    lane._round()
+    assert lane.status().enabled is False
+
+
+def test_leboncoin_lane_is_off_by_default_slower_and_yields_to_polls(factory, monkeypatch):
+    _seed(factory)
+    settings = livefeed.get_settings().model_copy(update={
+        "enable_leboncoin": True, "enable_live_feed_leboncoin": True,
+        "live_feed_leboncoin_interval_seconds": 60,
+    })
+    monkeypatch.setattr(livefeed, "get_settings", lambda: settings)
+    from app.config import Settings
+
+    assert Settings().enable_live_feed_leboncoin is False
+    lane = _lane(lambda q: pytest.fail("no request while a poll runs"), livefeed.LEBONCOIN_LANE)
+    assert lane.status().interval_seconds == 180  # clamped to the minimum
+    monkeypatch.setattr(livefeed.jobs, "any_running", lambda: True)
+    monkeypatch.setattr(lane, "_wait", lambda seconds: None)
+    lane._round()
+    assert lane.status().yielding is True
+
+
+def test_leboncoin_live_search_never_uses_the_browser(monkeypatch):
+    from app.sources import leboncoin
+
+    src = leboncoin.LeboncoinSource()
+    monkeypatch.setattr(src, "_post_browser", lambda body: pytest.fail("browser used"))
+    monkeypatch.setattr(src, "_post_curl", lambda body: {"ads": []})
+    assert src.search_live(livefeed.SearchQuery("3ds")) == []
+
+    monkeypatch.setattr(leboncoin, "_browser_preferred_until", float("inf"))
+    with pytest.raises(leboncoin.DataDomeBlocked):
+        src.search_live(livefeed.SearchQuery("3ds"))
 
 
 # -- web page -------------------------------------------------------------
@@ -230,10 +282,42 @@ def test_header_highlights_the_current_page_icon(client, factory):
 
 
 def test_status_says_starting_before_the_first_round(client, factory, monkeypatch):
-    monkeypatch.setattr(web_routes, "live_feed", LiveFeed(source_factory=lambda: None))
+    monkeypatch.setattr(web_routes, "live_feed", LiveFeed())
     settings = livefeed.get_settings().model_copy(
         update={"enable_live_feed": True, "enable_vinted": True}
     )
     monkeypatch.setattr(livefeed, "get_settings", lambda: settings)
     html = client.get("/live").text
     assert "Démarrage" in html and "Aucune recherche active" not in html
+    # One line per lane; Leboncoin is off unless both toggles are on.
+    assert "Leboncoin" in html and "Désactivé" in html
+
+
+def test_settings_save_leboncoin_live_fields(client, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(web_routes, "save_settings", lambda u: saved.update(u))
+    monkeypatch.setattr(web_routes, "reschedule_poll", lambda _m: None)
+
+    too_fast = client.post(
+        "/settings", data={"live_feed_leboncoin_interval_seconds": "60"}, follow_redirects=False
+    )
+    assert too_fast.status_code == 400 and "au moins 180" in too_fast.text
+
+    ok = client.post(
+        "/settings",
+        data={"enable_live_feed_leboncoin": "on", "live_feed_leboncoin_interval_seconds": "300"},
+        follow_redirects=False,
+    )
+    assert ok.status_code == 303
+    assert saved["enable_live_feed_leboncoin"] is True
+    assert saved["live_feed_leboncoin_interval_seconds"] == 300
+    html = client.get("/settings").text
+    assert 'name="enable_live_feed_leboncoin"' in html and "Direct Leboncoin" in html
+
+
+def test_duration_and_timeuntil_filters():
+    from datetime import timedelta
+
+    assert web_routes._duration(60) == "60 s" and web_routes._duration(300) == "5 min"
+    soon = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=30)
+    assert web_routes._timeuntil(soon) == "dans 4 min"
