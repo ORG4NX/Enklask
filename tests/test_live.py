@@ -217,3 +217,23 @@ def test_settings_save_live_feed_fields(client, monkeypatch):
     assert ok.status_code == 303
     assert saved["enable_live_feed"] is True and saved["live_feed_interval_seconds"] == 45
     assert 'name="enable_live_feed"' in client.get("/settings").text
+
+
+def test_header_highlights_the_current_page_icon(client, factory):
+    _seed(factory)
+    for path in ("/live", "/liked", "/settings"):
+        html = client.get(path).text
+        assert html.count('aria-current="page"') == 1
+        assert f'href="{path}" title=' in html.split('aria-current="page"')[0].rsplit("<a ", 1)[1]
+        assert "bg-brand-light text-brand flex" in html  # title badge, same glyph
+    assert 'aria-current="page"' not in client.get("/").text
+
+
+def test_status_says_starting_before_the_first_round(client, factory, monkeypatch):
+    monkeypatch.setattr(web_routes, "live_feed", LiveFeed(source_factory=lambda: None))
+    settings = livefeed.get_settings().model_copy(
+        update={"enable_live_feed": True, "enable_vinted": True}
+    )
+    monkeypatch.setattr(livefeed, "get_settings", lambda: settings)
+    html = client.get("/live").text
+    assert "Démarrage" in html and "Aucune recherche active" not in html

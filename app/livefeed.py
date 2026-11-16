@@ -79,7 +79,7 @@ class FeedStatus:
     enabled: bool = False
     running: bool = False
     interval_seconds: int = 0
-    watched: int = 0
+    watched: int | None = None  # None until the first round has listed them
     started_at: datetime | None = None
     last_check_at: datetime | None = None
     last_new_at: datetime | None = None

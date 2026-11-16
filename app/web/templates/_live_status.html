@@ -11,6 +11,11 @@
     <span class="w-2 h-2 rounded-full bg-amber-500"></span> En pause
   </span>
   <span class="text-gray-500 min-w-0 truncate" title="{{ feed.last_error }}">Vinted a refusé la dernière requête, reprise automatique. <span class="text-gray-400">({{ feed.last_error }})</span></span>
+  {% elif feed.watched is none %}
+  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium bg-warm-100 text-gray-500">
+    <span class="live-dot w-2 h-2 rounded-full bg-gray-400"></span> Démarrage
+  </span>
+  <span class="text-gray-400">Première vérification dans quelques secondes.</span>
   {% elif not feed.watched %}
   <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium bg-warm-100 text-gray-500">
     <span class="w-2 h-2 rounded-full bg-gray-400"></span> En attente
