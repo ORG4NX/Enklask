@@ -22,6 +22,9 @@
     {% if search.condition %}
     <span class="text-[10px] text-gray-400 mt-1 inline-block">· État : {{ (condition_labels or {}).get(search.condition, search.condition) }}</span>
     {% endif %}
+    {% if search.required_words %}
+    <span class="text-[10px] text-gray-400 mt-1 inline-block" title="Seuls les résultats dont le titre contient tous ces mots sont gardés">· avec : {{ search.required_words | join(', ') }}</span>
+    {% endif %}
     {% if search.exclude_words %}
     <span class="text-[10px] text-gray-400 mt-1 inline-block" title="Résultats écartés quand leur titre contient ces mots">· sans : {{ search.exclude_words | join(', ') }}</span>
     {% endif %}

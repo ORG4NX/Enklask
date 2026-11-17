@@ -132,3 +132,78 @@ def test_live_search_drops_excluded_and_out_of_price(monkeypatch):
     assert "Game Boy Player" in html
     assert "Wii blanche" not in html
     assert "+ disque" not in html
+
+
+def test_missing_required_needs_every_word_as_a_whole_word():
+    from app.filters import missing_required
+
+    words = ["player", "game boy"]
+    assert missing_required("Game-Boy PLAYER + disque", words) is None
+    assert missing_required("Game Boy Advance", words) == "player"
+    assert missing_required("GameBoy Player", words) == "game boy"  # not a whole word
+    assert missing_required("anything", []) is None
+
+
+def test_drop_missing_required_keeps_matching_titles_in_order():
+    from app.filters import drop_missing_required
+
+    raws = [_raw(1, "Game Boy Player"), _raw(2, "Console Wii"), _raw(3, "Player GC + disque")]
+    assert [r.source_id for r in drop_missing_required(raws, ["player"])] == ["1", "3"]
+    assert drop_missing_required(raws, None) == raws
+
+
+def test_poller_keeps_only_results_with_the_required_words(monkeypatch):
+    monkeypatch.setattr("app.poller.time.sleep", lambda _: None)
+    stored = []
+
+    class _Scope:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr("app.poller.session_scope", lambda: _Scope())
+    monkeypatch.setattr(
+        "app.poller.upsert_listing", lambda session, raw, **kw: stored.append(raw.source_id)
+    )
+    topic = SimpleNamespace(id=1, name="Nintendo")
+    search = SimpleNamespace(
+        id=2, query="game boy player", price_min=None, price_max=None,
+        max_distance_km=None, condition=None, sources=[], tags=[],
+        exclude_words=[], required_words=["player"],
+    )
+    _, _, _, _, source_ids, _, _ = _poll_one(topic, search, [_Source()])
+    assert stored == ["1"]
+    assert source_ids == {"ebay": {"1"}}
+
+
+def test_migration_adds_the_required_words_column(monkeypatch):
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE saved_searches (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("INSERT INTO saved_searches (id) VALUES (1)"))
+    monkeypatch.setattr(migrate, "engine", engine)
+    migrate._ensure_saved_search_columns()
+    migrate._ensure_saved_search_columns()  # idempotent
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT required_words FROM saved_searches")).scalar() == "[]"
+
+
+def test_live_search_keeps_only_required_words(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import app.web.routes as routes
+    from app.main import app as fastapi_app
+
+    class Fake:
+        name = Source.EBAY
+
+        def search(self, query):
+            return [_raw(1, "Game Boy Player"), _raw(2, "Console GameCube violette")]
+
+    monkeypatch.setattr(routes, "get_enabled_sources", lambda: [Fake()])
+    html = TestClient(fastapi_app).get(
+        "/search/results", params={"q": "gameboy player", "require": "player"},
+    ).text
+    assert "Game Boy Player" in html and "GameCube violette" not in html

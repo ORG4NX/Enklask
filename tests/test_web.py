@@ -1008,3 +1008,19 @@ def test_search_edit_saves_and_shows_the_leboncoin_radius(client, db_session):
         data={"query": "canapé", "max_distance_km": "loin"},
     )
     assert "Doit être un nombre." in resp.text
+
+
+def test_search_edit_saves_and_shows_required_words(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = _search_of(db_session, topic)
+
+    resp = client.post(
+        f"/t/{topic.slug}/searches/{search.id}",
+        data={"query": "game boy player", "required_words": "player, Player ,gba"},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200 and "avec : player, gba" in resp.text
+    db_session.refresh(search)
+    assert search.required_words == ["player", "gba"]
+    form = client.get(f"/t/{topic.slug}/searches/{search.id}/edit")
+    assert 'value="player, gba"' in form.text

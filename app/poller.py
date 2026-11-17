@@ -13,7 +13,7 @@ from sqlalchemy import func, select, update
 
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
-from .filters import drop_excluded, drop_out_of_price
+from .filters import drop_excluded, drop_missing_required, drop_out_of_price
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
 from .sources.base import SearchQuery
@@ -111,6 +111,7 @@ def poll_search(search_id: int) -> PollResult:
         # Touch attributes so they stay usable after the session closes.
         _ = (search.query, search.price_min, search.price_max, search.max_distance_km,
              search.condition, search.sources, search.tags, search.exclude_words,
+             search.required_words,
              search.id,
              topic.id, topic.name, topic.apprise_url_list)
         is_cold_start = (
@@ -231,9 +232,10 @@ def _poll_one(topic, search, sources) -> tuple[
             errors[source_name] = str(exc)
             continue
         successful_sources.add(source_name)
-        # Excluded (and out-of-budget) results are left out of the seen set too, so ads stored
+        # Excluded (and off-topic or out-of-budget) results are left out of the seen set too, so ads stored
         # before the word was excluded fade out like sold ones.
         raws = drop_excluded(raws, getattr(search, "exclude_words", None))
+        raws = drop_missing_required(raws, getattr(search, "required_words", None))
         raws = drop_out_of_price(raws, search.price_min, search.price_max)
         source_ids[source_name] = {raw.source_id for raw in raws}
 

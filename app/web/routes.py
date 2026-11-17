@@ -22,7 +22,9 @@ from ..config import get_settings, save_settings
 from ..db import get_session
 from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
-from ..filters import drop_excluded, drop_out_of_price, parse_exclude_words
+from ..filters import (
+    drop_excluded, drop_missing_required, drop_out_of_price, parse_exclude_words,
+)
 from ..livefeed import live_feed
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
 from ..poller import poll_once, poll_search, poll_topic
@@ -186,6 +188,7 @@ def _parse_search_form(form) -> tuple[dict, dict[str, str]]:
     name = (form.get("name") or "").strip()[:128] or query[:64]
     tags = [t.strip() for t in (form.get("tags") or "").split(",") if t.strip()]
     exclude_words = parse_exclude_words(form.get("exclude_words") or "")
+    required_words = parse_exclude_words(form.get("required_words") or "")
 
     prices: dict[str, float | None] = {}
     raw_prices: dict[str, str] = {}
@@ -218,7 +221,8 @@ def _parse_search_form(form) -> tuple[dict, dict[str, str]]:
 
     values = {
         "name": name, "query": query, "tags": tags, "condition": condition,
-        "sources": sources, "exclude_words": exclude_words, **prices,
+        "sources": sources, "exclude_words": exclude_words,
+        "required_words": required_words, **prices,
         "_raw_prices": raw_prices,
     }
     return values, errors
@@ -671,6 +675,7 @@ def _search_edit_response(
             "name": search.name, "query": search.query, "tags": search.tags or [],
             "condition": search.condition, "sources": search.sources or [],
             "exclude_words": search.exclude_words or [],
+            "required_words": search.required_words or [],
             "_raw_prices": {
                 field: ("%g" % getattr(search, field)) if getattr(search, field) is not None else ""
                 for field in ("price_min", "price_max", "max_distance_km")
@@ -821,11 +826,13 @@ def search_results_partial(request: Request):
 
     # Some sources silently drop part of the query (Easy Cash loses the price
     # range when it redirects to a category page), so the budget and the
-    # excluded words are re-checked here on every result.
+    # excluded/required words are re-checked here on every result.
     exclude_words = parse_exclude_words(request.query_params.get("exclude") or "")
+    required_words = parse_exclude_words(request.query_params.get("require") or "")
     per_source = [
         drop_out_of_price(
-            drop_excluded(found, exclude_words), query.price_min, query.price_max
+            drop_missing_required(drop_excluded(found, exclude_words), required_words),
+            query.price_min, query.price_max,
         )
         for found in per_source
     ]
@@ -897,6 +904,7 @@ async def save_search(request: Request, session: Session = Depends(get_session))
         condition=(form.get("condition") or None),
         tags=tags,
         exclude_words=parse_exclude_words(form.get("exclude_words") or ""),
+        required_words=parse_exclude_words(form.get("required_words") or ""),
     )
     session.add(search)
     session.commit()

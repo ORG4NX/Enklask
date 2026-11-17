@@ -41,7 +41,7 @@ from .config import get_settings
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
 from .enums import Source
-from .filters import drop_excluded
+from .filters import drop_excluded, drop_missing_required
 from .jobs import jobs
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
@@ -94,6 +94,7 @@ class WatchedSearch:
     condition: str | None
     tags: list[str]
     exclude_words: list[str]
+    required_words: list[str]
     topic_id: int
     topic_name: str
     topic_slug: str
@@ -144,6 +145,7 @@ def watched_searches(source: Source = Source.VINTED) -> list[WatchedSearch]:
                 max_distance_km=search.max_distance_km,
                 condition=search.condition, tags=list(search.tags or []),
                 exclude_words=list(search.exclude_words or []),
+                required_words=list(search.required_words or []),
                 topic_id=topic.id, topic_name=topic.name, topic_slug=topic.slug,
                 apprise_urls=topic.apprise_url_list,
             ))
@@ -267,6 +269,7 @@ class Lane:
             self._record_failure(search, exc)
             return False
         raws = drop_excluded(raws, search.exclude_words)
+        raws = drop_missing_required(raws, search.required_words)
 
         with write_lock, session_scope() as session:
             baseline = _is_baseline(session, search.id, self.spec.source)

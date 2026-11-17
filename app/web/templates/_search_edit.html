@@ -41,6 +41,12 @@
   </div>
 
   <label class="block">
+    <span class="text-xs font-medium text-gray-500">Mots obligatoires <span class="font-normal text-gray-400">(tous doivent être dans le titre)</span></span>
+    <input type="text" name="required_words" value="{{ v.required_words | join(', ') }}" placeholder="player"
+           class="{{ field_cls }} mt-1" />
+  </label>
+
+  <label class="block">
     <span class="text-xs font-medium text-gray-500">Mots exclus <span class="font-normal text-gray-400">(séparés par des virgules, cherchés dans le titre)</span></span>
     <input type="text" name="exclude_words" value="{{ v.exclude_words | join(', ') }}" placeholder="wii, gamecube, boîte vide"
            class="{{ field_cls }} mt-1" />

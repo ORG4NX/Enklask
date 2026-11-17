@@ -75,3 +75,24 @@ def drop_out_of_price(
         or ((price_min is None or raw.price >= price_min)
             and (price_max is None or raw.price <= price_max))
     ]
+
+
+def missing_required(title: str, words: list[str] | None) -> str | None:
+    """The first required word ``title`` lacks (same matching as
+    ``excluded_by``: whole words, case/accents/punctuation ignored), else None.
+    """
+    if not words:
+        return None
+    haystack = f" {normalize(title)} "
+    for word in words:
+        needle = normalize(word)
+        if needle and f" {needle} " not in haystack:
+            return word
+    return None
+
+
+def drop_missing_required(raws: list, words: list[str] | None) -> list:
+    """``raws`` keeping only the listings whose title has every required word."""
+    if not words:
+        return list(raws)
+    return [raw for raw in raws if missing_required(raw.title, words) is None]

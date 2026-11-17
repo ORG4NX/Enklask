@@ -279,6 +279,9 @@ def create_search(slug: str, body: dict, session: Session = Depends(get_session)
         exclude_words=parse_exclude_words(
             ", ".join(raw) if isinstance(raw := body.get("exclude_words") or "", list) else raw
         ),
+        required_words=parse_exclude_words(
+            ", ".join(raw) if isinstance(raw := body.get("required_words") or "", list) else raw
+        ),
     )
     session.add(search)
     session.commit()

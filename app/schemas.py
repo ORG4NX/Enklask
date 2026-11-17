@@ -52,6 +52,7 @@ class SavedSearchOut(BaseModel):
     sources: list
     tags: list
     exclude_words: list | None = None
+    required_words: list | None = None
     enabled: bool
     created_at: datetime
 
