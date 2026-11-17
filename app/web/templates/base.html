@@ -7,6 +7,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Enklask</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <script>
+    // Zoom mode (header A / A+): applied before first paint so pages don't
+    // flash at 100 %. Stored per browser; storage may be unavailable.
+    try { if (localStorage.getItem('enklask-zoom') === '150') document.documentElement.dataset.zoom = '150'; } catch (e) {}
+    function setZoom(level) {
+      var root = document.documentElement;
+      if (level === '150') root.dataset.zoom = '150'; else delete root.dataset.zoom;
+      try { localStorage.setItem('enklask-zoom', level); } catch (e) {}
+      document.querySelectorAll('[data-zoom-btn]').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.zoomBtn === level));
+      });
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+      setZoom(document.documentElement.dataset.zoom === '150' ? '150' : '100');
+    });
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     // Neutral colours read CSS variables (see app.css) so the whole UI follows
@@ -69,6 +85,16 @@
       </form>
 
       <div class="ml-auto flex items-center gap-2 shrink-0">
+        {# Zoom toggle: normal size / everything at 150 %. #}
+        <div role="group" aria-label="Taille d'affichage"
+             class="hidden sm:flex items-center rounded-xl border border-warm-200 p-0.5 text-gray-500">
+          <button type="button" data-zoom-btn="100" onclick="setZoom('100')" aria-pressed="true"
+                  title="Taille normale" aria-label="Taille normale"
+                  class="px-2 py-1 rounded-lg text-xs font-semibold transition hover:text-brand aria-pressed:bg-brand-light aria-pressed:text-brand">A</button>
+          <button type="button" data-zoom-btn="150" onclick="setZoom('150')" aria-pressed="false"
+                  title="Agrandir (150 %)" aria-label="Agrandir à 150 %"
+                  class="px-2 py-1 rounded-lg text-sm font-semibold transition hover:text-brand aria-pressed:bg-brand-light aria-pressed:text-brand">A+</button>
+        </div>
         {# The link of the page being shown is highlighted (aria-current). #}
         {% for href, label, icon in [
           ("/live", "Direct", icons.live()),

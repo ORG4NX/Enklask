@@ -205,6 +205,26 @@ class Notifier:
                 sent += 1
         return sent
 
+    def notify_price_target(self, item: NotifyItem, target: float) -> bool:
+        """One followed listing reached its target price (never digested)."""
+        if not self.enabled:
+            return False
+        sent = False
+        target_txt = f"{target:.0f} {item.currency}"
+        if self._discord:
+            embed = self.build_embed(item)
+            embed["title"] = f"🎯 Prix cible atteint — {item.title}"[:256]
+            embed["color"] = 0x10B981  # emerald, like the price-drop badges
+            embed["fields"].insert(1, {"name": "Cible", "value": target_txt, "inline": True})
+            for target_hook in self._discord:
+                sent = self._post_discord(target_hook, embed) or sent
+        if self._other:
+            title, body = self.format_listing(item)
+            sent = self._send(
+                f"🎯 Prix cible atteint ({target_txt}) · {title}", body, urls=self._other
+            ) or sent
+        return sent
+
     def send_test(self, topic_name: str = "") -> bool:
         ok = False
         if self._discord:

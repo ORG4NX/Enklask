@@ -53,6 +53,16 @@ def _ensure_listing_columns() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE listings ADD COLUMN buying_format VARCHAR(16)"))
         logger.info("Added 'buying_format' column to listings.")
+    if "target_price" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE listings ADD COLUMN target_price FLOAT"))
+        logger.info("Added 'target_price' column to listings.")
+    if "target_alerted" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE listings ADD COLUMN target_alerted BOOLEAN DEFAULT 0")
+            )
+        logger.info("Added 'target_alerted' column to listings.")
 
 
 def _drop_topic_columns() -> None:

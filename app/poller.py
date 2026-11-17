@@ -16,6 +16,7 @@ from .dedup import upsert_listing, write_lock
 from .filters import drop_excluded, drop_missing_required, drop_out_of_price
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
+from .price_alerts import check_price_targets
 from .sources.base import SearchQuery
 from .sources.registry import get_enabled_sources
 
@@ -301,6 +302,8 @@ def _notify(topic, new_items: list[NotifyItem], is_cold_start: bool) -> None:
     try:
         notifier = Notifier.for_topic(topic.apprise_url_list)
         notifier.notify_new(new_items, is_cold_start=is_cold_start)
+        # Prices of followed listings may have moved during this poll.
+        check_price_targets()
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException:

@@ -1024,3 +1024,30 @@ def test_search_edit_saves_and_shows_required_words(client, db_session):
     assert search.required_words == ["player", "gba"]
     form = client.get(f"/t/{topic.slug}/searches/{search.id}/edit")
     assert 'value="player, gba"' in form.text
+
+
+def test_watch_row_sets_shows_and_clears_a_target_price(client, db_session):
+    _, listing = _topic_with_listing(db_session)
+    listing.status = "liked"
+    listing.price = 80.0
+    db_session.commit()
+
+    resp = client.post(f"/partials/listings/{listing.id}/target", data={"target_price": "50"})
+    assert resp.status_code == 200
+    assert 'name="target_price"' in resp.text and 'value="50"' in resp.text
+    assert "encore 30" in resp.text
+    db_session.refresh(listing)
+    assert listing.target_price == 50.0 and listing.target_alerted is False
+
+    # A target at or above the current price shows as reached, without an alert.
+    resp = client.post(f"/partials/listings/{listing.id}/target", data={"target_price": "90,5"})
+    assert "Cible atteinte" in resp.text
+    db_session.refresh(listing)
+    assert listing.target_price == 90.5 and listing.target_alerted is True
+
+    client.post(f"/partials/listings/{listing.id}/target", data={"target_price": ""})
+    db_session.refresh(listing)
+    assert listing.target_price is None
+
+    page = client.get("/liked")
+    assert "Alerte à" in page.text

@@ -22,6 +22,7 @@ from ..config import get_settings, save_settings
 from ..db import get_session
 from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
+from ..price_alerts import target_reached
 from ..filters import (
     drop_excluded, drop_missing_required, drop_out_of_price, parse_exclude_words,
 )
@@ -936,6 +937,37 @@ def listings_partial(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(template, {"request": request, **page})
 
 
+@router.post("/partials/listings/{listing_id}/target", response_class=HTMLResponse)
+def update_target_price(
+    listing_id: int,
+    request: Request,
+    target_price: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Set (or clear, when blank) the price alert of a followed listing and
+    re-render its price-watch row."""
+    listing = session.get(Listing, listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    raw = target_price.strip().replace(",", ".").replace("€", "")
+    try:
+        value = float(raw) if raw else None
+    except ValueError:
+        value = listing.target_price  # keep the previous target on bad input
+    if value is not None and value <= 0:
+        value = None
+    if value != listing.target_price:
+        listing.target_price = value
+        # Already at or below the new target: the row shows it as reached and
+        # no alert is sent for a price you are looking at right now.
+        listing.target_alerted = target_reached(listing)
+        session.commit()
+        session.refresh(listing)
+    return templates.TemplateResponse(
+        "_watch_row.html", {"request": request, "row": _watch_row(listing)}
+    )
+
+
 @router.post("/partials/listings/{listing_id}/status", response_class=HTMLResponse)
 def update_status(
     listing_id: int,
@@ -1245,6 +1277,7 @@ def _watch_row(listing: Listing) -> dict:
         points, last_x, last_y = _sparkline_points(pts)
     direction = "down" if delta < 0 else ("up" if delta > 0 else "flat")
     return {
+        "target": listing.target_price, "target_hit": target_reached(listing),
         "listing": listing, "cur": cur, "first": first, "delta": delta, "pct": pct,
         "lo": lo, "hi": hi, "moved": moved, "direction": direction,
         "points": points, "last_x": last_x, "last_y": last_y,

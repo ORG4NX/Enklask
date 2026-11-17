@@ -45,6 +45,7 @@ from .filters import drop_excluded, drop_missing_required
 from .jobs import jobs
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
+from .price_alerts import check_price_targets
 from .sources.base import SearchQuery
 
 logger = logging.getLogger(__name__)
@@ -283,6 +284,7 @@ class Lane:
                     new_items.append(NotifyItem.from_listing(listing, topic_name=search.topic_name))
 
         self._record_success(search, len(new_items))
+        check_price_targets()  # a followed listing's price may have moved
         if new_items:
             logger.info(
                 "Live feed (%s): %d new on '%s'%s (%.1fs)", self.spec.label,

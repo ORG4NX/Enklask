@@ -122,6 +122,13 @@ class Listing(Base):
     # refresh sees a changed price, so drops/rises can be shown on the card.
     price_history: Mapped[list] = mapped_column(JSON, default=list)
 
+    # Price alert on a followed listing: notify once when the price reaches
+    # target_price or less; target_alerted re-arms when it goes back above.
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_alerted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
+
     thumbnail: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     photos: Mapped[list] = mapped_column(JSON, default=list)
 

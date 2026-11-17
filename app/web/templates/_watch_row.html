@@ -29,6 +29,26 @@
       <span class="truncate" title="Première détection par Enklask">&middot; repérée {{ listing.first_seen | timeago }}</span>
     </div>
     <div class="mt-1 hidden sm:block">{{ ui.ebay_meta(listing.shipping_cost, listing.buying_format, listing.currency) }}</div>
+    {# Target price alert: saved on change/Enter, blank clears it. #}
+    <form class="mt-1.5 flex items-center gap-1.5 text-xs"
+          hx-post="/partials/listings/{{ listing.id }}/target"
+          hx-trigger="change, submit"
+          hx-target="#watch-{{ listing.id }}" hx-swap="outerHTML">
+      <label class="flex items-center gap-1 text-gray-500" title="Notification quand le prix descend à ce montant ou en dessous (vide = pas d'alerte)">
+        <span aria-hidden="true">🎯</span>
+        <span>Alerte à</span>
+        <input type="text" inputmode="decimal" name="target_price" size="5"
+               value="{{ '%g'|format(row.target) if row.target is not none else '' }}" placeholder="—"
+               aria-label="Prix cible en euros"
+               class="w-16 bg-warm-50 border border-warm-200 rounded-lg px-2 py-0.5 text-xs text-gray-700 focus:ring-2 focus:ring-brand/20 focus:border-brand/30 focus:outline-none" />
+        <span>€</span>
+      </label>
+      {% if row.target_hit %}
+      <span class="rounded-full px-2 py-0.5 font-semibold bg-emerald-50 text-emerald-700">Cible atteinte</span>
+      {% elif row.target is not none and row.cur is not none %}
+      <span class="text-gray-400">encore {{ "%.0f"|format(row.cur - row.target) }}&nbsp;€</span>
+      {% endif %}
+    </form>
   </div>
 
   <div class="hidden sm:block shrink-0">

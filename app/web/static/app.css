@@ -194,3 +194,17 @@ input:checked + .toggle-track::after {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgb(var(--gray-300)); border-radius: 3px; }
+
+/* ---------------------------------------------------------------------------
+   "Zoom" mode (header A / A+ toggle): the whole page at 150 %, text, icons and
+   spacing alike. CSS zoom also scales vh units, so the few vh-capped boxes are
+   divided by 1.5 to keep their real on-screen height.
+   ------------------------------------------------------------------------- */
+html[data-zoom="150"] { zoom: 1.5; }
+html[data-zoom="150"] .min-h-screen { min-height: calc(100vh / 1.5); }
+html[data-zoom="150"] .max-h-\[90vh\] { max-height: 60vh; }
+html[data-zoom="150"] .max-h-\[60vh\] { max-height: 40vh; }
+html[data-zoom="150"] .max-h-\[45vh\] { max-height: 30vh; }
+@media (min-width: 768px) {
+  html[data-zoom="150"] .md\:max-h-\[90vh\] { max-height: 60vh; }
+}
