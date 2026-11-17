@@ -14,7 +14,7 @@ import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.orm import Session
 
 from ..api.routes import _query_listings
@@ -472,20 +472,162 @@ def _home_refresh_view(session: Session) -> dict:
     return view
 
 
+# ---------------------------------------------------------------------------
+# Home feed: the latest listings of every topic, newest first
+# ---------------------------------------------------------------------------
+
+_FEED_PAGE_SIZE = 40
+
+
+def _feed_decorate(
+    session: Session, listings: list[Listing], topic_id: int | None = None
+) -> list[dict]:
+    """Rows for the feed: each listing with the topic/search it was found
+    under (in ``topic_id`` when given) and its deal badge."""
+    if not listings:
+        return []
+    annotate_deals(session, listings, topic_id)
+    stmt = (
+        select(ListingTopic.listing_id, Topic, SavedSearch)
+        .join(Topic, Topic.id == ListingTopic.topic_id)
+        .outerjoin(SavedSearch, SavedSearch.id == ListingTopic.search_id)
+        .where(ListingTopic.listing_id.in_([li.id for li in listings]))
+        .order_by(ListingTopic.listing_id, Topic.position, Topic.id)
+    )
+    if topic_id is not None:
+        stmt = stmt.where(ListingTopic.topic_id == topic_id)
+    origin: dict[int, tuple] = {}
+    for listing_id, topic, search in session.execute(stmt).all():
+        origin.setdefault(listing_id, (topic, search))
+    return [
+        {"listing": li, "topic": origin.get(li.id, (None, None))[0],
+         "search": origin.get(li.id, (None, None))[1]}
+        for li in listings
+    ]
+
+
+def _feed_rows(
+    session: Session, *, topic_id: int | None, deals_only: bool,
+    after: int | None = None, before: int | None = None,
+) -> tuple[list[dict], int | None]:
+    """One page of the feed, and the id to continue below (None at the end).
+
+    Listings still offered by at least one search (of ``topic_id`` when
+    given), hidden ones left out, newest first. With ``deals_only`` a wider
+    batch is read and only the deals are kept: the badge is computed here,
+    not in SQL."""
+    link = exists().where(
+        ListingTopic.listing_id == Listing.id, ListingTopic.is_available.is_(True)
+    )
+    if topic_id is not None:
+        link = link.where(ListingTopic.topic_id == topic_id)
+    stmt = (
+        select(Listing)
+        .where(Listing.status != ListingStatus.HIDDEN.value, link)
+        .order_by(Listing.id.desc())
+    )
+    if after is not None:
+        stmt = stmt.where(Listing.id > after)
+    if before is not None:
+        stmt = stmt.where(Listing.id < before)
+    batch = _FEED_PAGE_SIZE * (6 if deals_only else 1)
+    listings = list(session.scalars(stmt.limit(batch + 1)))
+    has_more = len(listings) > batch
+    listings = listings[:batch]
+    rows = _feed_decorate(session, listings, topic_id)
+    if deals_only:
+        rows = [r for r in rows if getattr(r["listing"], "deal", None)]
+        if len(rows) > _FEED_PAGE_SIZE:
+            rows, has_more = rows[:_FEED_PAGE_SIZE], True
+            return rows, rows[-1]["listing"].id
+    if not has_more or not listings:
+        return rows, None
+    return rows, listings[-1].id
+
+
+def _feed_params(request: Request) -> tuple[int | None, bool]:
+    raw = request.query_params.get("topic") or ""
+    return (int(raw) if raw.isdigit() else None,
+            request.query_params.get("deals") in ("1", "true", "on"))
+
+
+def _feed_context(session: Session, topic_id: int | None, deals_only: bool) -> dict:
+    topics = list(session.scalars(select(Topic).order_by(Topic.position, Topic.id)))
+    if topic_id is not None and not any(t.id == topic_id for t in topics):
+        topic_id = None
+    rows, more_before = _feed_rows(session, topic_id=topic_id, deals_only=deals_only)
+    return {
+        "topic_stats": [_topic_stat(session, t) for t in topics],
+        "feed_rows": rows,
+        "feed_more_before": more_before,
+        "feed_topic": next((t for t in topics if t.id == topic_id), None),
+        "feed_topic_id": topic_id,
+        "feed_deals": deals_only,
+        "feed_cursor": session.scalar(select(func.max(Listing.id))) or 0,
+    }
+
+
+def _feed_query(topic_id=None, deals_only=False, **extra) -> str:
+    params: dict = {}
+    if topic_id is not None:
+        params["topic"] = topic_id
+    if deals_only:
+        params["deals"] = 1
+    params.update({k: v for k, v in extra.items() if v is not None})
+    return urlencode(params)
+
+
+templates.env.globals["feed_query"] = _feed_query
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, session: Session = Depends(get_session)):
-    topics = list(session.scalars(select(Topic).order_by(Topic.position, Topic.id)))
+    topic_id, deals_only = _feed_params(request)
     return templates.TemplateResponse("home.html", {
         "request": request,
-        "topic_stats": [_topic_stat(session, t) for t in topics],
         "source_status": _source_statuses(session),
         "refresh": _home_refresh_view(session),
+        **_feed_context(session, topic_id, deals_only),
     })
+
+
+@router.get("/partials/feed", response_class=HTMLResponse)
+def feed_partial(
+    request: Request, after: int | None = None, before: int | None = None,
+    session: Session = Depends(get_session),
+):
+    """The home feed: the whole block (filters changed, refresh finished),
+    an older page (``before``), or the listings newer than ``after``."""
+    topic_id, deals_only = _feed_params(request)
+    if after is not None:
+        rows, _ = _feed_rows(session, topic_id=topic_id, deals_only=deals_only, after=after)
+        return templates.TemplateResponse("_feed_new.html", {
+            "request": request, "feed_rows": rows,
+            "feed_topic_id": topic_id, "feed_deals": deals_only,
+            "feed_cursor": session.scalar(select(func.max(Listing.id))) or after,
+        })
+    if before is not None:
+        rows, more_before = _feed_rows(
+            session, topic_id=topic_id, deals_only=deals_only, before=before
+        )
+        return templates.TemplateResponse("_feed_items.html", {
+            "request": request, "feed_rows": rows, "feed_more_before": more_before,
+            "feed_topic_id": topic_id, "feed_deals": deals_only,
+        })
+    return templates.TemplateResponse("_feed.html", {
+        "request": request, **_feed_context(session, topic_id, deals_only),
+    })
+
+
+def _feed_row_response(request: Request, session: Session, listing: Listing):
+    row = _feed_decorate(session, [listing])[0]
+    return templates.TemplateResponse("_feed_row.html", {"request": request, "row": row})
 
 
 @router.get("/partials/topics", response_class=HTMLResponse)
 def topics_partial(request: Request, session: Session = Depends(get_session)):
-    """The home topic grid alone, re-fetched once a global refresh finishes."""
+    """The home topic grid alone (kept for older pages; the home now shows
+    the feed, re-fetched through /partials/feed)."""
     topics = list(session.scalars(select(Topic).order_by(Topic.position, Topic.id)))
     return templates.TemplateResponse("_topic_grid.html", {
         "request": request,
@@ -1146,6 +1288,22 @@ def update_status(
             "_watch_row.html", {"request": request, "row": _watch_row(listing)}
         )
 
+    if from_ == "feed":
+        if listing.status == ListingStatus.HIDDEN.value:
+            undo = {
+                "label": "Annuler",
+                "url": f"/partials/listings/{listing.id}/restore",
+                "target": f"#feed-{listing.id}",
+                "values": {"value": previous_status, "from": "feed"},
+            }
+            return HTMLResponse(
+                f'<div id="feed-{listing.id}" class="hidden" aria-hidden="true"></div>',
+                headers={"HX-Trigger": json.dumps({
+                    "toast": {"message": "Annonce masquée", "level": "muted", "action": undo},
+                })},
+            )
+        return _feed_row_response(request, session, listing)
+
     if listing.status == ListingStatus.HIDDEN.value:
         # Leave an invisible placeholder where the card was, so "Annuler" in the
         # toast can put the card back at the same spot in the grid.
@@ -1178,6 +1336,7 @@ def restore_listing(
     request: Request,
     value: str = Form(ListingStatus.SEEN.value),
     since: str = Form(""),
+    from_: str = Form("", alias="from"),
     session: Session = Depends(get_session),
 ):
     """Undo a hide: put back the status the listing had before and re-render
@@ -1195,6 +1354,8 @@ def restore_listing(
         listing.status = previous.value
         session.commit()
         session.refresh(listing)
+    if from_ == "feed":
+        return _feed_row_response(request, session, listing)
     return _card_response(request, session, listing, since)
 
 

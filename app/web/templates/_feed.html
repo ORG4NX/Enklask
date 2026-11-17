@@ -1,0 +1,61 @@
+{# Home: the topics as filter pills, then the latest listings of every search.
+   Re-rendered with the same filters when a refresh finishes. #}
+<div id="home-feed"
+     hx-get="/partials/feed?{{ feed_query(feed_topic_id, feed_deals) }}"
+     hx-trigger="refresh-done from:body" hx-swap="outerHTML">
+
+  {% set pill = "inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-xl text-sm font-medium border transition" %}
+  {% set pill_off = "bg-white border-warm-200 text-gray-600 hover:border-brand/30 hover:text-brand" %}
+  {% set pill_on = "bg-brand-light border-brand/40 text-brand" %}
+  {% set q_all = feed_query(none, feed_deals) %}
+  <nav aria-label="Filtrer par topic" class="flex items-center gap-2 overflow-x-auto pb-1 mb-4">
+    <button type="button" class="{{ pill }} {{ pill_on if feed_topic_id is none else pill_off }}"
+            aria-pressed="{{ 'true' if feed_topic_id is none else 'false' }}"
+            hx-get="/partials/feed?{{ q_all }}" hx-target="#home-feed" hx-swap="outerHTML"
+            hx-push-url="/{{ ('?' ~ q_all) if q_all else '' }}">Tous</button>
+    {% for ts in topic_stats %}
+    {% set on = feed_topic_id == ts.topic.id %}
+    {% set q_topic = feed_query(ts.topic.id, feed_deals) %}
+    <button type="button" class="{{ pill }} {{ pill_on if on else pill_off }}"
+            aria-pressed="{{ 'true' if on else 'false' }}"
+            title="{{ ts.listing_count }} annonce{{ 's' if ts.listing_count != 1 else '' }}{% if ts.new_count %}, dont {{ ts.new_count }} nouvelle{{ 's' if ts.new_count != 1 else '' }}{% endif %}"
+            hx-get="/partials/feed?{{ q_topic }}" hx-target="#home-feed" hx-swap="outerHTML"
+            hx-push-url="/?{{ q_topic }}">
+      {{ ts.topic.name }}
+      {% if ts.new_count %}<span class="text-[11px] font-semibold px-1.5 rounded-full bg-brand text-white">{{ ts.new_count }}</span>{% endif %}
+    </button>
+    {% endfor %}
+    <button type="button" onclick="document.getElementById('new-topic-modal').classList.remove('hidden')"
+            title="Nouveau topic" aria-label="Nouveau topic"
+            class="{{ pill }} border-dashed border-warm-200 text-gray-400 hover:text-brand hover:border-brand/40">+</button>
+  </nav>
+
+  {% set q_deals = feed_query(feed_topic_id, not feed_deals) %}
+  <div class="flex items-center gap-3 mb-3 min-w-0">
+    <h2 class="font-semibold text-gray-900 truncate">
+      {% if feed_topic %}{{ feed_topic.name }}{% else %}Dernières annonces{% endif %}
+    </h2>
+    {% if feed_topic %}
+    <a href="/t/{{ feed_topic.slug }}" class="text-xs font-medium text-brand hover:underline shrink-0">Ouvrir le topic &rarr;</a>
+    {% endif %}
+    <button type="button"
+            class="ml-auto shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold border transition
+                   {{ 'bg-emerald-50 border-emerald-200 text-emerald-700' if feed_deals else 'bg-white border-warm-200 text-gray-500 hover:text-emerald-700' }}"
+            aria-pressed="{{ 'true' if feed_deals else 'false' }}"
+            title="Seulement les annonces sous 60 % du prix médian de leur recherche"
+            hx-get="/partials/feed?{{ q_deals }}" hx-target="#home-feed" hx-swap="outerHTML"
+            hx-push-url="/{{ ('?' ~ q_deals) if q_deals else '' }}">
+      🔥 Bonnes affaires
+    </button>
+  </div>
+
+  <div id="feed-list" class="flex flex-col gap-2" aria-live="polite">
+    {% include "_feed_items.html" %}
+  </div>
+  {% if not feed_rows %}
+  <p class="text-center text-sm text-gray-400 py-16">
+    {% if feed_deals %}Aucune bonne affaire pour l'instant.{% else %}Rien pour l'instant. Les annonces apparaîtront ici dès qu'elles sont repérées.{% endif %}
+  </p>
+  {% endif %}
+  {% include "_feed_poller.html" %}
+</div>

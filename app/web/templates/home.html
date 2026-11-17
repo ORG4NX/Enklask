@@ -59,11 +59,10 @@
 </div>
 {% endif %}
 
-<!-- Topic cards. Re-fetched when any refresh finishes (refresh-done). -->
+<!-- Topics as filters + the latest listings (_feed.html). -->
 {% if topic_stats %}
-<div id="topics" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-     hx-get="/partials/topics" hx-trigger="refresh-done from:body" hx-swap="innerHTML">
-  {% include "_topic_grid.html" %}
+<div class="max-w-4xl mx-auto">
+{% include "_feed.html" %}
 </div>
 
 {% else %}

@@ -1234,3 +1234,61 @@ def test_saving_a_live_search_keeps_the_ticked_sources(client, db_session):
                                       "sources": ["ebay", "leboncoin", "bogus"]})
     search = db_session.query(SavedSearch).one()
     assert search.sources == ["ebay", "leboncoin"]
+
+
+def _two_topics_feed(session):
+    from app.enums import ListingStatus
+    out = {}
+    for slug, titles in (("retro", ["PSOne blanche", "PSOne cachée"]), ("mac", ["MacBook Pro"])):
+        topic = Topic(name=slug.capitalize(), slug=slug)
+        session.add(topic)
+        session.flush()
+        search = SavedSearch(topic_id=topic.id, name=slug, query=slug)
+        session.add(search)
+        session.flush()
+        for title in titles:
+            li = Listing(source="ebay", source_id=title, title=title, url=f"https://x/{title}",
+                         price=50.0,
+                         status=(ListingStatus.HIDDEN if "cachée" in title else ListingStatus.NEW).value)
+            session.add(li)
+            session.flush()
+            session.add(ListingTopic(listing_id=li.id, topic_id=topic.id, search_id=search.id))
+            out[title] = li
+        out[slug] = topic
+    session.commit()
+    return out
+
+
+def test_home_feed_lists_the_latest_listings_without_hidden_ones(client, db_session):
+    data = _two_topics_feed(db_session)
+    html = client.get("/").text
+    assert "Dernières annonces" in html
+    assert "PSOne blanche" in html and "MacBook Pro" in html
+    assert "PSOne cachée" not in html
+    only_retro = client.get(f"/?topic={data['retro'].id}").text
+    assert "PSOne blanche" in only_retro and "MacBook Pro" not in only_retro
+    assert "Ouvrir le topic" in only_retro
+
+
+def test_feed_partial_filters_and_polls(client, db_session):
+    data = _two_topics_feed(db_session)
+    block = client.get(f"/partials/feed?topic={data['mac'].id}").text
+    assert 'id="home-feed"' in block and "MacBook Pro" in block and "PSOne" not in block
+    newer = client.get(f"/partials/feed?after={data['PSOne blanche'].id}").text
+    assert "MacBook Pro" in newer and "PSOne blanche" not in newer
+    assert 'hx-swap-oob="true"' in newer
+    assert "Aucune bonne affaire" in client.get("/partials/feed?deals=1").text
+
+
+def test_hiding_from_the_feed_can_be_undone(client, db_session):
+    import json as _json
+    data = _two_topics_feed(db_session)
+    li = data["MacBook Pro"]
+    r = client.post(f"/partials/listings/{li.id}/status", data={"value": "hidden", "from": "feed"})
+    assert f'id="feed-{li.id}"' in r.text and "hidden" in r.text
+    action = _json.loads(r.headers["HX-Trigger"])["toast"]["action"]
+    assert action["target"] == f"#feed-{li.id}"
+    restored = client.post(action["url"], data=action["values"])
+    assert f'id="feed-{li.id}"' in restored.text and "MacBook Pro" in restored.text
+    liked = client.post(f"/partials/listings/{li.id}/status", data={"value": "liked", "from": "feed"})
+    assert 'aria-pressed="true"' in liked.text

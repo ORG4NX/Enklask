@@ -1,0 +1,89 @@
+{% set source_styles = {
+  "ebay": "bg-blue-50 text-blue-600",
+  "vinted": "bg-teal-50 text-teal-600",
+  "leboncoin": "bg-orange-50 text-orange-600",
+  "easycash": "bg-amber-50 text-amber-600",
+  "label_emmaus": "bg-emerald-50 text-emerald-600",
+  "aliexpress": "bg-rose-50 text-rose-600"
+} %}
+{% set listing = row.listing %}
+{% set liked = listing.status == 'liked' %}
+<div id="feed-{{ listing.id }}"
+     class="listing-card {{ 'live-row-new' if fresh else '' }} bg-white rounded-2xl border p-3 flex items-center gap-3 sm:gap-4
+            {{ 'border-brand/40' if liked else 'border-warm-200' }}">
+
+  <button type="button" onclick="openPreview(this)" title="Aperçu de l'annonce" aria-label="Aperçu de l'annonce"
+          class="shrink-0 block w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-warm-100 cursor-zoom-in">
+    {% set cover = (listing.photos[0] if listing.photos else none) or listing.thumbnail %}
+    {% if cover %}
+    <img src="{{ cover | img_size }}" alt="" loading="lazy" class="w-full h-full object-cover" />
+    {% else %}
+    <div class="w-full h-full flex items-center justify-center text-gray-300">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+    </div>
+    {% endif %}
+  </button>
+
+  <div class="flex-1 min-w-0">
+    <a href="{{ listing.url }}" target="_blank" rel="noopener"
+       class="text-sm text-gray-700 line-clamp-2 sm:line-clamp-1 hover:text-brand transition-colors">{{ listing.title }}</a>
+    <div class="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5 min-w-0">
+      <span class="px-1.5 py-0.5 rounded font-semibold shrink-0 {{ source_styles.get(listing.source, 'bg-gray-50 text-gray-600') }}">{{ listing.source | source_label }}</span>
+      {% if row.topic %}
+      <a href="/t/{{ row.topic.slug }}" class="truncate hover:text-brand">{{ row.topic.name }}{% if row.search %} &middot; {{ row.search.name or row.search.query }}{% endif %}</a>
+      {% endif %}
+    </div>
+    <div class="text-xs text-gray-400 mt-0.5 truncate" title="Première détection par Enklask">
+      repérée {{ listing.first_seen | timeago }}{% if listing.location_city %} &middot; {{ listing.location_city }}{% if listing.distance_km is not none %} ({{ "%.0f"|format(listing.distance_km) }} km){% endif %}{% endif %}
+    </div>
+  </div>
+
+  <div class="text-right shrink-0">
+    <div class="text-lg sm:text-xl font-bold text-gray-900 leading-tight">
+      {% if listing.price is not none %}{{ "%.0f"|format(listing.price) }}&nbsp;{{ listing.currency }}{% else %}&mdash;{% endif %}
+    </div>
+    {% if listing.deal is defined and listing.deal %}
+    <span class="inline-block mt-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 whitespace-nowrap"
+          title="Bonne affaire : {{ listing.deal.pct }} % sous le prix médian de la recherche{% if listing.deal.search %} « {{ listing.deal.search }} »{% endif %} ({{ '%.0f'|format(listing.deal.median) }} {{ listing.currency }}, sur {{ listing.deal.samples }} annonces)">🔥 −{{ listing.deal.pct }} %</span>
+    {% endif %}
+  </div>
+
+  <div class="flex items-center gap-1.5 shrink-0">
+    <button type="button"
+            hx-post="/partials/listings/{{ listing.id }}/status"
+            hx-vals='{"value": "liked", "from": "feed"}'
+            hx-target="#feed-{{ listing.id }}" hx-swap="outerHTML"
+            title="{{ 'Ne plus suivre' if liked else 'Suivre le prix' }}"
+            aria-label="{{ 'Ne plus suivre' if liked else 'Suivre le prix' }}"
+            aria-pressed="{{ 'true' if liked else 'false' }}"
+            class="w-9 h-9 flex items-center justify-center rounded-xl border transition {{ 'bg-brand-light border-brand/30' if liked else 'border-warm-200 hover:border-brand/30' }}">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="{{ '#E63946' if liked else 'none' }}" stroke="#E63946" stroke-width="1.5" aria-hidden="true">
+        <path d="M8 14s-5.5-3.5-5.5-7A3 3 0 018 5a3 3 0 015.5 2c0 3.5-5.5 7-5.5 7z"/>
+      </svg>
+    </button>
+    <button type="button"
+            hx-post="/partials/listings/{{ listing.id }}/status"
+            hx-vals='{"value": "hidden", "from": "feed"}'
+            hx-target="#feed-{{ listing.id }}" hx-swap="outerHTML"
+            title="Masquer" aria-label="Masquer l'annonce"
+            class="w-9 h-9 flex items-center justify-center rounded-xl border border-warm-200 text-gray-400 hover:text-gray-700 hover:border-gray-300 transition">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+    </button>
+  </div>
+
+  <script type="application/json" class="preview-data">{{ {
+    "title": listing.title,
+    "price": (("%.0f"|format(listing.price)) ~ " " ~ listing.currency) if listing.price is not none else "",
+    "currency": listing.currency,
+    "buyingFormat": ("Enchère" if listing.buying_format == 'auction' else ("Achat immédiat" if listing.buying_format == 'buy_it_now' else "")),
+    "shipping": (("Livraison gratuite" if listing.shipping_cost == 0 else ("+" ~ ("%.2f"|format(listing.shipping_cost)) ~ " " ~ listing.currency ~ " livraison")) if listing.shipping_cost is not none else ""),
+    "priceHistory": listing.price_history | preview_history,
+    "source": listing.source,
+    "id": listing.source_id,
+    "location": (listing.location_city or "") ~ ((" · " ~ ("%.0f"|format(listing.distance_km)) ~ " km") if listing.distance_km is not none else ""),
+    "posted": (listing.posted_at | timeago) if listing.posted_at else (("vu " ~ (listing.first_seen | timeago)) if listing.first_seen else ""),
+    "description": listing.description or "",
+    "url": listing.url,
+    "photos": (listing.photos or ([listing.thumbnail] if listing.thumbnail else [])) | map("img_size", "full") | list
+  } | tojson }}</script>
+</div>

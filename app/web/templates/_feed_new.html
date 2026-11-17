@@ -1,0 +1,2 @@
+{% for row in feed_rows %}{% set fresh = true %}{% include "_feed_row.html" %}{% endfor %}
+{% with oob = true %}{% include "_feed_poller.html" %}{% endwith %}

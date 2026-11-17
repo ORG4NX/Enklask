@@ -1,0 +1,6 @@
+{# Polls for listings newer than the cursor and prepends them to #feed-list;
+   each answer carries a replacement poller (out-of-band) with the new cursor. #}
+<div id="feed-poller"
+     hx-get="/partials/feed?{{ feed_query(feed_topic_id, feed_deals, after=feed_cursor) }}"
+     hx-trigger="every 20s" hx-target="#feed-list" hx-swap="afterbegin"
+     {% if oob %}hx-swap-oob="true"{% endif %}></div>
