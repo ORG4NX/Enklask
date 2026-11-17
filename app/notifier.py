@@ -84,6 +84,8 @@ class NotifyItem:
     distance_km: float | None = None
     description: str = ""
     thumbnail: str | None = None
+    # Percentage under the search's median price when it is a deal.
+    deal_pct: int | None = None
 
     @classmethod
     def from_listing(cls, listing, topic_name: str = "") -> "NotifyItem":
@@ -147,7 +149,8 @@ class Notifier:
     def format_listing(self, item: NotifyItem) -> tuple[str, str]:
         price = f"{item.price:.0f}{item.currency}" if item.price is not None else "?"
         prefix = f"[{item.topic_name}] " if item.topic_name else ""
-        title = f"{prefix}{item.source} · {price} — {item.title[:80]}"
+        deal = f" 🔥−{item.deal_pct}%" if item.deal_pct is not None else ""
+        title = f"{prefix}{item.source} · {price}{deal} — {item.title[:80]}"
 
         lines: list[str] = []
         if item.location_city:
@@ -171,9 +174,15 @@ class Notifier:
             if item.distance_km is not None:
                 loc = f"{loc} ({item.distance_km:.0f} km)".strip()
             fields.append({"name": "Lieu", "value": loc or "—", "inline": True})
+        if item.deal_pct is not None:
+            fields.append({
+                "name": "Bonne affaire",
+                "value": f"🔥 −{item.deal_pct} % sous le prix médian",
+                "inline": True,
+            })
 
         embed: dict = {
-            "title": item.title[:256],
+            "title": (f"🔥 {item.title}" if item.deal_pct is not None else item.title)[:256],
             "url": item.url,
             "color": _SOURCE_COLOR.get(item.source, _DEFAULT_COLOR),
             "fields": fields,

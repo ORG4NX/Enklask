@@ -44,6 +44,20 @@ def search_medians(session: Session, search_ids: set[int]) -> dict[int, tuple[fl
     return out
 
 
+def mark_deals(session: Session, search_id: int, items: list, deals_only: bool) -> list:
+    """Set ``deal_pct`` on the NotifyItems of new listings from ``search_id``
+    and return those to notify: all of them, or only the deals when
+    ``deals_only`` (none while the search lacks the prices for a median)."""
+    if not items:
+        return []
+    med = search_medians(session, {search_id}).get(search_id)
+    for item in items:
+        item.deal_pct = deal_for(item.price, med[0]) if med else None
+    if deals_only:
+        return [item for item in items if item.deal_pct is not None]
+    return list(items)
+
+
 def deal_for(price: float | None, med: float) -> int | None:
     """Percentage under the median when ``price`` is a deal, else None."""
     if price is None or med <= 0:

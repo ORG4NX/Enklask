@@ -115,6 +115,12 @@ def _ensure_saved_search_columns() -> None:
                 text("ALTER TABLE saved_searches ADD COLUMN required_words TEXT DEFAULT '[]'")
             )
         logger.info("Added 'required_words' column to saved_searches.")
+    if "notify_deals_only" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE saved_searches ADD COLUMN notify_deals_only BOOLEAN DEFAULT 0")
+            )
+        logger.info("Added 'notify_deals_only' column to saved_searches.")
     if "ignored_suggestions" not in columns:
         with engine.begin() as conn:
             conn.execute(

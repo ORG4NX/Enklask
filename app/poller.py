@@ -13,6 +13,7 @@ from sqlalchemy import func, select, update
 
 from . import health
 from .db import session_scope
+from .deals import mark_deals
 from .dedup import upsert_listing, write_lock
 from .filters import drop_excluded, drop_missing_required, drop_out_of_price
 from .models import Listing, ListingTopic, SavedSearch, Topic
@@ -113,7 +114,7 @@ def poll_search(search_id: int) -> PollResult:
         # Touch attributes so they stay usable after the session closes.
         _ = (search.query, search.price_min, search.price_max, search.max_distance_km,
              search.condition, search.sources, search.tags, search.exclude_words,
-             search.required_words,
+             search.required_words, search.notify_deals_only,
              search.id,
              topic.id, topic.name, topic.apprise_url_list)
         is_cold_start = (
@@ -264,6 +265,15 @@ def _poll_one(topic, search, sources) -> tuple[
                     seen_count += 1
 
         time.sleep(random.uniform(0.5, 1.5))
+
+    if new_items:
+        # Flag the deals (badge in the notification), and keep only them
+        # when the search asks for it. new_count still counts every new ad.
+        with session_scope() as session:
+            new_items = mark_deals(
+                session, search.id, new_items,
+                bool(getattr(search, "notify_deals_only", False)),
+            )
 
     return (
         new_count,

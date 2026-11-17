@@ -45,6 +45,7 @@ from .enums import Source
 from .filters import drop_excluded, drop_missing_required
 from .jobs import jobs
 from .models import Listing, ListingTopic, SavedSearch, Topic
+from .deals import mark_deals
 from .notifier import Notifier, NotifyItem
 from .price_alerts import check_price_targets
 from .sources.base import SearchQuery
@@ -101,6 +102,7 @@ class WatchedSearch:
     topic_name: str
     topic_slug: str
     apprise_urls: list[str]
+    notify_deals_only: bool = False
 
 
 @dataclass
@@ -148,6 +150,7 @@ def watched_searches(source: Source = Source.VINTED) -> list[WatchedSearch]:
                 condition=search.condition, tags=list(search.tags or []),
                 exclude_words=list(search.exclude_words or []),
                 required_words=list(search.required_words or []),
+                notify_deals_only=bool(search.notify_deals_only),
                 topic_id=topic.id, topic_name=topic.name, topic_slug=topic.slug,
                 apprise_urls=topic.apprise_url_list,
             ))
@@ -285,18 +288,20 @@ class Lane:
                 )
                 if listing is not None:
                     new_items.append(NotifyItem.from_listing(listing, topic_name=search.topic_name))
+            new_count = len(new_items)
+            to_notify = mark_deals(session, search.id, new_items, search.notify_deals_only)
 
-        self._record_success(search, len(new_items))
+        self._record_success(search, new_count)
         check_price_targets()  # a followed listing's price may have moved
         if new_items:
             logger.info(
                 "Live feed (%s): %d new on '%s'%s (%.1fs)", self.spec.label,
-                len(new_items), search.name,
+                new_count, search.name,
                 " (baseline, not notified)" if baseline else "", time.monotonic() - started,
             )
-        if new_items and not baseline:
+        if to_notify and not baseline:
             try:
-                Notifier.for_topic(search.apprise_urls).notify_new(new_items)
+                Notifier.for_topic(search.apprise_urls).notify_new(to_notify)
             except Exception:  # noqa: BLE001 - a failed webhook must not stop the feed
                 logger.exception("Live feed notification failed for '%s'", search.name)
         return True

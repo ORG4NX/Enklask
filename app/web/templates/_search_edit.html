@@ -76,6 +76,13 @@
     </fieldset>
   </div>
 
+  <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+    <input type="checkbox" name="notify_deals_only" value="1" {% if v.notify_deals_only %}checked{% endif %}
+           class="mt-0.5 accent-[#E63946]" />
+    <span>Notifier seulement les bonnes affaires 🔥
+      <span class="block text-xs text-gray-400">Les autres nouvelles annonces arrivent quand même dans le topic, sans notification.</span></span>
+  </label>
+
   <div class="flex items-center gap-3 pt-1">
     <button type="submit"
             class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">

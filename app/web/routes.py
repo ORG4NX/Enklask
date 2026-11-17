@@ -228,6 +228,7 @@ def _parse_search_form(form) -> tuple[dict, dict[str, str]]:
         "name": name, "query": query, "tags": tags, "condition": condition,
         "sources": sources, "exclude_words": exclude_words,
         "required_words": required_words, **prices,
+        "notify_deals_only": bool(form.get("notify_deals_only")),
         "_raw_prices": raw_prices,
     }
     return values, errors
@@ -718,6 +719,7 @@ def _search_edit_response(
             "condition": search.condition, "sources": search.sources or [],
             "exclude_words": search.exclude_words or [],
             "required_words": search.required_words or [],
+            "notify_deals_only": bool(search.notify_deals_only),
             "_raw_prices": {
                 field: ("%g" % getattr(search, field)) if getattr(search, field) is not None else ""
                 for field in ("price_min", "price_max", "max_distance_km")

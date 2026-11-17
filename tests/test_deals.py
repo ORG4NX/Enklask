@@ -57,3 +57,39 @@ def test_no_badge_without_enough_prices():
     topic, listings = _seed(session, [100.0] * 5 + [50.0])
     annotate_deals(session, listings, topic.id)
     assert all(li.deal is None for li in listings)
+
+
+def test_mark_deals_flags_and_filters_the_items_to_notify():
+    from app.deals import mark_deals
+    from app.notifier import NotifyItem
+
+    session = _session()
+    _seed(session, [100.0] * 8)
+    search_id = session.query(SavedSearch).one().id
+    deal = NotifyItem(source="ebay", title="cheap", url="u1", price=50.0)
+    normal = NotifyItem(source="ebay", title="normal", url="u2", price=95.0)
+
+    assert mark_deals(session, search_id, [deal, normal], deals_only=False) == [deal, normal]
+    assert deal.deal_pct == 50 and normal.deal_pct is None
+    assert mark_deals(session, search_id, [deal, normal], deals_only=True) == [deal]
+
+
+def test_deals_only_notifies_nothing_without_a_median():
+    from app.deals import mark_deals
+    from app.notifier import NotifyItem
+
+    session = _session()
+    _seed(session, [100.0] * 3)
+    search_id = session.query(SavedSearch).one().id
+    item = NotifyItem(source="ebay", title="x", url="u", price=10.0)
+    assert mark_deals(session, search_id, [item], deals_only=True) == []
+
+
+def test_deal_shows_in_the_discord_embed_and_text():
+    from app.notifier import Notifier, NotifyItem
+
+    item = NotifyItem(source="ebay", title="GB Player", url="u", price=50.0, deal_pct=40)
+    embed = Notifier([]).build_embed(item)
+    assert embed["title"].startswith("🔥 ")
+    assert any(f["name"] == "Bonne affaire" for f in embed["fields"])
+    assert "🔥−40%" in Notifier([]).format_listing(item)[0]

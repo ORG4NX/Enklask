@@ -178,6 +178,10 @@ class SavedSearch(Base):
     exclude_words: Mapped[list] = mapped_column(JSON, default=list)
     # Words or phrases a result's title must all contain to be kept.
     required_words: Mapped[list] = mapped_column(JSON, default=list)
+    # Notify only new listings flagged as deals (see app/deals.py).
+    notify_deals_only: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
     # Suggested exclusion words the user dismissed (see app/suggestions.py).
     ignored_suggestions: Mapped[list] = mapped_column(JSON, default=list)
     enabled: Mapped[bool] = mapped_column(default=True)

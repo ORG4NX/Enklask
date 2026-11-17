@@ -1188,3 +1188,18 @@ def test_topic_grid_shows_the_deal_badge(client, db_session):
     db_session.commit()
     html = client.get("/t/deals").text
     assert html.count("🔥 −40 %") == 1
+
+
+def test_search_edit_saves_the_deals_only_notification(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = db_session.query(SavedSearch).one()
+    form = client.get(f"/t/switch/searches/{search.id}/edit").text
+    assert 'name="notify_deals_only"' in form
+    r = client.post(f"/t/switch/searches/{search.id}",
+                    data={"query": "switch oled", "notify_deals_only": "1"})
+    assert "bonnes affaires seulement" in r.text
+    db_session.expire_all()
+    assert db_session.get(SavedSearch, search.id).notify_deals_only is True
+    client.post(f"/t/switch/searches/{search.id}", data={"query": "switch oled"})
+    db_session.expire_all()
+    assert db_session.get(SavedSearch, search.id).notify_deals_only is False
