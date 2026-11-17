@@ -61,13 +61,21 @@
       <input type="text" name="exclude" aria-label="Mots exclus" placeholder="Sans : wii, gamecube"
              title="Écarte les annonces dont le titre contient un de ces mots (séparés par des virgules)"
              class="text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 w-44 text-gray-700 font-medium placeholder-gray-400 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
-      <select name="source" class="filter-select text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 text-gray-700 font-medium focus:ring-2 focus:ring-brand/20 focus:outline-none ml-auto">
-        <option value="">Toutes sources</option>
-        {% for src in enabled_sources %}
-        <option value="{{ src }}">{{ src | source_label }}</option>
-        {% endfor %}
-      </select>
     </div>
+
+    <!-- Sources to query: several can be ticked; none ticked = all. -->
+    <fieldset class="flex flex-wrap items-center gap-2">
+      <legend class="sr-only">Sources</legend>
+      <span class="text-xs font-medium text-gray-500 mr-1" title="Aucune cochée = toutes les sources">Sources :</span>
+      {% for src in enabled_sources %}
+      <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 bg-warm-50 border border-transparent rounded-xl px-3 py-1.5 cursor-pointer select-none
+                    has-[:checked]:border-brand/40 has-[:checked]:bg-brand-light has-[:checked]:text-brand font-medium transition">
+        <input type="checkbox" name="source" value="{{ src }}" class="accent-[#E63946]" />
+        {{ src | source_label }}
+      </label>
+      {% endfor %}
+      <span class="text-xs text-gray-400" data-sources-hint>toutes</span>
+    </fieldset>
   </form>
 </div>
 
@@ -94,6 +102,7 @@
       <input type="hidden" name="exclude_words" id="save-exclude" />
       <input type="hidden" name="required_words" id="save-require" />
       <input type="hidden" name="max_distance_km" id="save-distance" />
+      <span id="save-sources" hidden></span>
 
       <label class="flex flex-col gap-1.5">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Nom</span>
@@ -167,12 +176,32 @@ function openSaveModal() {
   document.getElementById('save-exclude').value = liveForm.querySelector('[name="exclude"]').value;
   document.getElementById('save-require').value = liveForm.querySelector('[name="require"]').value;
   document.getElementById('save-distance').value = liveForm.querySelector('[name="max_distance_km"]').value;
+  // The ticked sources become the saved search's sources (none = all).
+  var saveSources = document.getElementById('save-sources');
+  saveSources.innerHTML = '';
+  liveForm.querySelectorAll('input[name="source"]:checked').forEach(function (cb) {
+    var input = document.createElement('input');
+    input.type = 'hidden'; input.name = 'sources'; input.value = cb.value;
+    saveSources.appendChild(input);
+  });
   // Reveal the new-topic fields if "Nouveau topic" is already selected
   // (the default when no topics exist yet) — onchange won't have fired.
   var sel = document.getElementById('save-topic-select');
   document.getElementById('new-topic-fields').classList.toggle('hidden', sel.value !== 'new');
   document.getElementById('save-search-modal').classList.remove('hidden');
 }
+
+// "toutes" next to the source boxes while none is ticked.
+(function () {
+  var form = document.querySelector('form[hx-get="/search/results"]');
+  var hint = form && form.querySelector('[data-sources-hint]');
+  if (!hint) return;
+  function update() {
+    hint.hidden = !!form.querySelector('input[name="source"]:checked');
+  }
+  form.addEventListener('change', update);
+  update();
+})();
 </script>
 
 {% endblock %}

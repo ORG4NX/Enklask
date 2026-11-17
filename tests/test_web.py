@@ -1203,3 +1203,34 @@ def test_search_edit_saves_the_deals_only_notification(client, db_session):
     client.post(f"/t/switch/searches/{search.id}", data={"query": "switch oled"})
     db_session.expire_all()
     assert db_session.get(SavedSearch, search.id).notify_deals_only is False
+
+
+def test_live_search_queries_only_the_ticked_sources(monkeypatch):
+    def raw(src, sid):
+        return RawListing(source=src, source_id=sid, title=f"Item {sid}", url=f"https://x/{sid}")
+
+    sources = [
+        _Source(Source.EBAY, results=[raw(Source.EBAY, "e1")]),
+        _Source(Source.VINTED, results=[raw(Source.VINTED, "v1")]),
+        _Source(Source.LEBONCOIN, results=[raw(Source.LEBONCOIN, "l1")]),
+    ]
+    monkeypatch.setattr(web_routes, "get_enabled_sources", lambda: sources)
+
+    def run(qs):
+        request = Request({"type": "http", "method": "GET", "path": "/search/results",
+                           "query_string": qs, "headers": []})
+        return web_routes.search_results_partial(request).body.decode()
+
+    html = run(b"q=item&source=ebay&source=leboncoin")
+    assert "Item e1" in html and "Item l1" in html and "Item v1" not in html
+    assert all(f"Item {s}" in run(b"q=item") for s in ("e1", "v1", "l1"))
+
+
+def test_saving_a_live_search_keeps_the_ticked_sources(client, db_session):
+    topic = Topic(name="Mac", slug="mac")
+    db_session.add(topic)
+    db_session.commit()
+    client.post("/search/save", data={"query": "macbook pro 2016", "topic_id": str(topic.id),
+                                      "sources": ["ebay", "leboncoin", "bogus"]})
+    search = db_session.query(SavedSearch).one()
+    assert search.sources == ["ebay", "leboncoin"]

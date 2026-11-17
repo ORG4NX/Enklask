@@ -935,7 +935,8 @@ def search_results_partial(request: Request):
 
     sort = request.query_params.get("sort") or "recent"
     condition = request.query_params.get("condition") or None
-    source_filter = request.query_params.get("source") or None
+    # Ticked sources (several allowed); none ticked means every source.
+    wanted = {v for v in request.query_params.getlist("source") if v}
 
     # Filters are pushed into each source's native query (crawled, not
     # post-filtered) so the source returns only matching ads.
@@ -949,8 +950,8 @@ def search_results_partial(request: Request):
     )
 
     sources = get_enabled_sources()
-    if source_filter:
-        sources = [s for s in sources if s.name.value == source_filter]
+    if wanted:
+        sources = [s for s in sources if s.name.value in wanted]
 
     per_source: list[list] = []
     errors: dict[str, str] = {}
@@ -1042,6 +1043,7 @@ async def save_search(request: Request, session: Session = Depends(get_session))
         tags=tags,
         exclude_words=parse_exclude_words(form.get("exclude_words") or ""),
         required_words=parse_exclude_words(form.get("required_words") or ""),
+        sources=[v for v in form.getlist("sources") if v in SOURCE_LABELS],
     )
     session.add(search)
     session.commit()
