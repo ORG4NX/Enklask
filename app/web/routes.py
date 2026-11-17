@@ -34,6 +34,7 @@ from ..livefeed import live_feed
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
 from ..poller import poll_once, poll_search, poll_topic
 from ..scheduler import next_poll_at, reschedule_poll
+from ..sources.base import wanted_sources
 from ..sources.registry import get_enabled_sources
 
 logger = logging.getLogger(__name__)
@@ -173,6 +174,7 @@ CONDITION_LABELS = {
 SOURCE_LABELS = {source.value: label for source, label in (
     (Source.EBAY, "eBay"), (Source.VINTED, "Vinted"), (Source.LEBONCOIN, "Leboncoin"),
     (Source.EASYCASH, "Easy Cash"), (Source.LABEL_EMMAUS, "Label Emmaüs"),
+    (Source.ALIEXPRESS, "AliExpress"),
 )}
 # Display name of a source wherever a pill, option or badge shows one.
 templates.env.filters["source_label"] = lambda value: SOURCE_LABELS.get(
@@ -949,9 +951,7 @@ def search_results_partial(request: Request):
         sort=sort,
     )
 
-    sources = get_enabled_sources()
-    if wanted:
-        sources = [s for s in sources if s.name.value in wanted]
+    sources = wanted_sources(get_enabled_sources(), wanted)
 
     per_source: list[list] = []
     errors: dict[str, str] = {}
@@ -1622,7 +1622,7 @@ def _validate_settings_form(form) -> tuple[dict, list[str]]:
 
     for f in (
         "enable_ebay", "enable_vinted", "enable_leboncoin", "enable_easycash",
-        "enable_label_emmaus", "notify_on_first_run", "enable_live_feed",
+        "enable_label_emmaus", "enable_aliexpress", "notify_on_first_run", "enable_live_feed",
         "enable_live_feed_leboncoin",
     ):
         updates[f] = f in form

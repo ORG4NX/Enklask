@@ -58,6 +58,7 @@
   html .bg-blue-50 { background-color: color-mix(in srgb, rgb(59 130 246) 16%, rgb(var(--card))); }
   html .bg-teal-50 { background-color: color-mix(in srgb, rgb(20 184 166) 16%, rgb(var(--card))); }
   html .bg-orange-50 { background-color: color-mix(in srgb, rgb(249 115 22) 16%, rgb(var(--card))); }
+  html .bg-rose-50 { background-color: color-mix(in srgb, rgb(244 63 94) 16%, rgb(var(--card))); }
   html .bg-emerald-50 { background-color: color-mix(in srgb, rgb(16 185 129) 16%, rgb(var(--card))); }
   html .bg-red-50 { background-color: color-mix(in srgb, rgb(239 68 68) 16%, rgb(var(--card))); }
   html .bg-amber-50 { background-color: color-mix(in srgb, rgb(245 158 11) 16%, rgb(var(--card))); }

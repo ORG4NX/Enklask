@@ -11,6 +11,7 @@ class Source(str, Enum):
     LEBONCOIN = "leboncoin"
     EASYCASH = "easycash"
     LABEL_EMMAUS = "label_emmaus"
+    ALIEXPRESS = "aliexpress"
 
 
 class ListingStatus(str, Enum):

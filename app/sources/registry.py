@@ -45,12 +45,19 @@ def _label_emmaus() -> BaseSource:
     return LabelEmmausSource()
 
 
+def _aliexpress() -> BaseSource:
+    from .aliexpress import AliExpressSource
+
+    return AliExpressSource()
+
+
 _FACTORIES: tuple[Callable[[], BaseSource], ...] = (
     _ebay,
     _vinted,
     _leboncoin,
     _easycash,
     _label_emmaus,
+    _aliexpress,
 )
 
 

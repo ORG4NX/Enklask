@@ -35,6 +35,7 @@ class Settings(BaseModel):
     enable_leboncoin: bool = False
     enable_easycash: bool = False
     enable_label_emmaus: bool = False
+    enable_aliexpress: bool = False
 
     # eBay Browse API (client-credentials OAuth)
     ebay_client_id: str = ""
@@ -66,6 +67,8 @@ class Settings(BaseModel):
     # Easy Cash and Label Emmaüs (unofficial, public search pages, no key)
     easycash_base_url: str = "https://bons-plans.easycash.fr"
     label_emmaus_base_url: str = "https://www.label-emmaus.co"
+    # AliExpress (unofficial, public search page, no key): new parts and kits
+    aliexpress_base_url: str = "https://fr.aliexpress.com"
 
     # Shared cookies.txt file (Netscape format, e.g. from "Get cookies.txt LOCALLY").
     cookies_file: str = "data/cookies.txt"

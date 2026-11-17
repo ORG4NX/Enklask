@@ -19,7 +19,7 @@ from .filters import drop_excluded, drop_missing_required, drop_out_of_price
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
 from .price_alerts import check_gone_listings, check_price_targets
-from .sources.base import SearchQuery
+from .sources.base import SearchQuery, wanted_sources
 from .sources.registry import get_enabled_sources
 
 logger = logging.getLogger(__name__)
@@ -222,10 +222,7 @@ def _poll_one(topic, search, sources) -> tuple[
         max_distance_km=search.max_distance_km,
         condition=search.condition,
     )
-    targeted = set(search.sources or [])
-    for source in sources:
-        if targeted and source.name.value not in targeted:
-            continue
+    for source in wanted_sources(sources, search.sources):
         source_name = source.name.value
         attempted_sources.add(source_name)
         try:

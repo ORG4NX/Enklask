@@ -66,7 +66,7 @@
     <!-- Sources to query: several can be ticked; none ticked = all. -->
     <fieldset class="flex flex-wrap items-center gap-2">
       <legend class="sr-only">Sources</legend>
-      <span class="text-xs font-medium text-gray-500 mr-1" title="Aucune cochée = toutes les sources">Sources :</span>
+      <span class="text-xs font-medium text-gray-500 mr-1" title="Aucune cochée = toutes les sources, sauf AliExpress (à cocher pour l'interroger)">Sources :</span>
       {% for src in enabled_sources %}
       <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 bg-warm-50 border border-transparent rounded-xl px-3 py-1.5 cursor-pointer select-none
                     has-[:checked]:border-brand/40 has-[:checked]:bg-brand-light has-[:checked]:text-brand font-medium transition">
@@ -74,7 +74,7 @@
         {{ src | source_label }}
       </label>
       {% endfor %}
-      <span class="text-xs text-gray-400" data-sources-hint>toutes</span>
+      <span class="text-xs text-gray-400" data-sources-hint>toutes{% if "aliexpress" in enabled_sources %} sauf AliExpress{% endif %}</span>
     </fieldset>
   </form>
 </div>

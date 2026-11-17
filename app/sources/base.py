@@ -37,6 +37,15 @@ class RawListing:
     posted_at: datetime | None = None
 
 
+def wanted_sources(sources: list, ticked) -> list:
+    """The sources a search queries: the ticked ones, or every source that is
+    not opt-in when none is ticked."""
+    ticked = {t for t in (ticked or []) if t}
+    if ticked:
+        return [s for s in sources if s.name.value in ticked]
+    return [s for s in sources if not getattr(s, "opt_in", False)]
+
+
 class SearchQuery:
     """Lightweight view over a SavedSearch passed to adapters.
 
@@ -72,6 +81,11 @@ class BaseSource(abc.ABC):
 
     #: Stable identifier, matches the Source enum value.
     name: Source
+
+    #: Only queried by searches that tick it explicitly. "No source ticked"
+    #: means every regular source: a parts catalogue such as AliExpress
+    #: would flood second-hand searches with new items and clones.
+    opt_in: bool = False
 
     @property
     @abc.abstractmethod

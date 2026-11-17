@@ -32,6 +32,7 @@ _SOURCE_COLOR = {
     "leboncoin": 0xFF6E14,
     "easycash": 0xF5B400,
     "label_emmaus": 0x10B981,
+    "aliexpress": 0xE62E04,
 }
 _DEFAULT_COLOR = 0xE63946  # brand red
 
