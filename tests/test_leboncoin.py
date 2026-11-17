@@ -312,3 +312,29 @@ def test_proxy_is_passed_to_curl_and_browser(monkeypatch):
     )
     source._post_browser({})
     assert browser_proxy == ["http://proxy.example:8080"]
+
+
+def test_build_body_sends_a_radius_around_home():
+    source = LeboncoinSource()
+    body = source._build_body(SearchQuery(query="canapé", max_distance_km=30))
+    location = body["filters"]["location"]
+    assert location["shippable"] is False
+    area = location["area"]
+    assert area["radius"] == 30_000
+    assert (area["lat"], area["lng"]) == (source._settings.home_lat, source._settings.home_lon)
+
+
+def test_search_drops_ads_beyond_the_radius(monkeypatch):
+    source = LeboncoinSource()
+    home_lat, home_lon = source._settings.home_lat, source._settings.home_lon
+
+    def ad(ad_id, lat, lng):
+        return {"list_id": ad_id, "subject": f"ad {ad_id}", "url": f"https://x/{ad_id}",
+                "price": [10], "location": {"lat": lat, "lng": lng}}
+
+    ads = [ad(1, home_lat, home_lon), ad(2, home_lat + 2, home_lon), ad(3, None, None)]
+    monkeypatch.setattr(source, "_post", lambda body: {"ads": ads})
+    kept = [r.source_id for r in source.search(SearchQuery("canapé", max_distance_km=30))]
+    assert kept == ["1", "3"]
+    # Without a radius nothing is dropped.
+    assert len(source.search(SearchQuery("canapé"))) == 3

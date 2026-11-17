@@ -16,6 +16,9 @@
       {% if search.price_max is not none %}Max: {{ "%.0f"|format(search.price_max) }} €{% endif %}
     </span>
     {% endif %}
+    {% if search.max_distance_km %}
+    <span class="text-[10px] text-gray-400 mt-1 inline-block" title="Appliqué à Leboncoin">· ≤ {{ "%.0f"|format(search.max_distance_km) }} km</span>
+    {% endif %}
     {% if search.condition %}
     <span class="text-[10px] text-gray-400 mt-1 inline-block">· État : {{ (condition_labels or {}).get(search.condition, search.condition) }}</span>
     {% endif %}

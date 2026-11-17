@@ -56,3 +56,22 @@ def drop_excluded(raws: list, words: list[str] | None) -> list:
     if not words:
         return list(raws)
     return [raw for raw in raws if excluded_by(raw.title, words) is None]
+
+
+def drop_out_of_price(
+    raws: list, price_min: float | None, price_max: float | None
+) -> list:
+    """``raws`` without the listings priced outside ``[price_min, price_max]``.
+
+    Safety net for sources that silently drop the price filter (Easy Cash
+    redirects many searches to a category page without it). Listings with an
+    unknown price are kept: there is nothing to judge them on.
+    """
+    if price_min is None and price_max is None:
+        return list(raws)
+    return [
+        raw for raw in raws
+        if raw.price is None
+        or ((price_min is None or raw.price >= price_min)
+            and (price_max is None or raw.price <= price_max))
+    ]

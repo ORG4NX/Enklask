@@ -985,3 +985,26 @@ def test_new_sources_have_labels_and_settings_toggles(client, db_session):
     db_session.commit()
     html = client.get(f"/t/{topic.slug}").text
     assert "Label Emmaüs" in html and "bg-emerald-50 text-emerald-600" in html
+
+
+def test_search_edit_saves_and_shows_the_leboncoin_radius(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = _search_of(db_session, topic)
+
+    resp = client.post(
+        f"/t/{topic.slug}/searches/{search.id}",
+        data={"query": "canapé", "max_distance_km": "30"},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200 and "≤ 30 km" in resp.text
+    db_session.refresh(search)
+    assert search.max_distance_km == 30.0
+
+    form = client.get(f"/t/{topic.slug}/searches/{search.id}/edit")
+    assert 'name="max_distance_km" value="30"' in form.text
+
+    resp = client.post(
+        f"/t/{topic.slug}/searches/{search.id}",
+        data={"query": "canapé", "max_distance_km": "loin"},
+    )
+    assert "Doit être un nombre." in resp.text

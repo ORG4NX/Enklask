@@ -135,7 +135,32 @@ class VintedApiClient:
         self._cookies = cookies
         self._warmed_at = time.monotonic()
 
-    def _get_items(self, params: dict) -> tuple[int, dict | None]:
+    def get_user(self, user_id: int | str) -> dict:
+        """Public profile of one member (city, country...) from ``/api/v2/users``.
+
+        Raises ``VintedApiError`` on any non-200 (429 = rate limited: callers
+        should stop asking for a while).
+        """
+        with self._lock:
+            self._ensure_session()
+            resp = self._session.get(
+                f"https://{self.domain}/api/v2/users/{user_id}",
+                headers=self._api_headers(),
+                timeout=_TIMEOUT_SECONDS,
+            )
+            if resp.status_code in (401, 403):
+                self._reset()
+        if resp.status_code != 200:
+            raise VintedApiError(f"Vinted user API answered {resp.status_code}", resp.status_code)
+        try:
+            user = resp.json().get("user")
+        except (ValueError, AttributeError) as exc:
+            raise VintedApiError("Vinted user API answered non-JSON", 200) from exc
+        if not isinstance(user, dict):
+            raise VintedApiError("Vinted user API answered without a user", 200)
+        return user
+
+    def _api_headers(self) -> dict[str, str]:
         lang = accept_language(self.domain)
         headers = {
             "Accept": "application/json, text/plain, */*",
@@ -153,11 +178,14 @@ class VintedApiClient:
         anon_id = self._cookies.get("anon_id")
         if anon_id:
             headers["X-Anon-Id"] = anon_id
+        return headers
+
+    def _get_items(self, params: dict) -> tuple[int, dict | None]:
         query = {"per_page": _PER_PAGE, "currency": "EUR", **params}
         resp = self._session.get(
             f"https://{catalog_api_host(self.domain)}/svc-catalogue/items",
             params=query,
-            headers=headers,
+            headers=self._api_headers(),
             timeout=_TIMEOUT_SECONDS,
         )
         if resp.status_code != 200:

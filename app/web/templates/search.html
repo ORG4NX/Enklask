@@ -52,6 +52,12 @@
              class="text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 w-24 text-gray-700 font-medium placeholder-gray-400 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
       <input type="number" name="price_max" min="0" step="1" placeholder="Prix max €"
              class="text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 w-24 text-gray-700 font-medium placeholder-gray-400 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
+      <input type="number" name="max_distance_km" min="1" step="1" placeholder="Rayon km"
+             aria-label="Rayon autour de chez toi en km" title="Leboncoin : annonces dans ce rayon autour de chez toi"
+             class="text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 w-24 text-gray-700 font-medium placeholder-gray-400 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
+      <input type="text" name="exclude" aria-label="Mots exclus" placeholder="Sans : wii, gamecube"
+             title="Écarte les annonces dont le titre contient un de ces mots (séparés par des virgules)"
+             class="text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 w-44 text-gray-700 font-medium placeholder-gray-400 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
       <select name="source" class="filter-select text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 text-gray-700 font-medium focus:ring-2 focus:ring-brand/20 focus:outline-none ml-auto">
         <option value="">Toutes sources</option>
         {% for src in enabled_sources %}
@@ -82,6 +88,8 @@
       <input type="hidden" name="query" id="save-query" />
       <input type="hidden" name="price_min" id="save-price-min" />
       <input type="hidden" name="price_max" id="save-price-max" />
+      <input type="hidden" name="exclude_words" id="save-exclude" />
+      <input type="hidden" name="max_distance_km" id="save-distance" />
 
       <label class="flex flex-col gap-1.5">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Nom</span>
@@ -152,6 +160,8 @@ function openSaveModal() {
   var liveForm = document.querySelector('form[hx-get="/search/results"]');
   document.getElementById('save-price-min').value = liveForm.querySelector('[name="price_min"]').value;
   document.getElementById('save-price-max').value = liveForm.querySelector('[name="price_max"]').value;
+  document.getElementById('save-exclude').value = liveForm.querySelector('[name="exclude"]').value;
+  document.getElementById('save-distance').value = liveForm.querySelector('[name="max_distance_km"]').value;
   // Reveal the new-topic fields if "Nouveau topic" is already selected
   // (the default when no topics exist yet) — onchange won't have fired.
   var sel = document.getElementById('save-topic-select');

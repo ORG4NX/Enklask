@@ -89,3 +89,46 @@ def test_migration_adds_the_column_to_an_existing_table(monkeypatch):
     assert "exclude_words" in columns
     with engine.connect() as conn:
         assert conn.execute(text("SELECT exclude_words FROM saved_searches")).scalar() == "[]"
+
+
+def test_drop_out_of_price_keeps_budget_and_unknown_prices():
+    from app.filters import drop_out_of_price
+
+    def raw(sid, price):
+        return RawListing(source=Source.EASYCASH, source_id=sid, title=sid,
+                          url="u", price=price)
+
+    raws = [raw("low", 10.0), raw("in", 80.0), raw("high", 200.0), raw("none", None)]
+    kept = [r.source_id for r in drop_out_of_price(raws, 50, 150)]
+    assert kept == ["in", "none"]
+    assert [r.source_id for r in drop_out_of_price(raws, None, 100)] == ["low", "in", "none"]
+    assert drop_out_of_price(raws, None, None) == raws
+
+
+def test_live_search_drops_excluded_and_out_of_price(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import app.web.routes as routes
+    from app.main import app as fastapi_app
+
+    class Fake:
+        name = Source.EASYCASH
+
+        def search(self, query):
+            return [
+                RawListing(source=Source.EASYCASH, source_id=s, title=t, url="u", price=p)
+                for s, t, p in [
+                    ("1", "Game Boy Player", 90.0),
+                    ("2", "Console Wii blanche", 60.0),
+                    ("3", "Game Boy Player + disque", 400.0),
+                ]
+            ]
+
+    monkeypatch.setattr(routes, "get_enabled_sources", lambda: [Fake()])
+    html = TestClient(fastapi_app).get(
+        "/search/results",
+        params={"q": "gameboy player", "price_max": "150", "exclude": "wii"},
+    ).text
+    assert "Game Boy Player" in html
+    assert "Wii blanche" not in html
+    assert "+ disque" not in html

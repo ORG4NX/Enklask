@@ -90,6 +90,7 @@ class WatchedSearch:
     query: str
     price_min: float | None
     price_max: float | None
+    max_distance_km: float | None
     condition: str | None
     tags: list[str]
     exclude_words: list[str]
@@ -140,6 +141,7 @@ def watched_searches(source: Source = Source.VINTED) -> list[WatchedSearch]:
             out.append(WatchedSearch(
                 id=search.id, name=search.name or search.query, query=search.query,
                 price_min=search.price_min, price_max=search.price_max,
+                max_distance_km=search.max_distance_km,
                 condition=search.condition, tags=list(search.tags or []),
                 exclude_words=list(search.exclude_words or []),
                 topic_id=topic.id, topic_name=topic.name, topic_slug=topic.slug,
@@ -256,6 +258,7 @@ class Lane:
         query = SearchQuery(
             query=search.query, price_min=search.price_min,
             price_max=search.price_max, condition=search.condition,
+            max_distance_km=search.max_distance_km,
         )
         started = time.monotonic()
         try:

@@ -222,3 +222,64 @@ def test_html_transport_uses_persistent_browser(monkeypatch):
 
     assert html == "<html>browser</html>"
     assert calls[0][2:] == ("/catalog", {"search_text": "switch"})
+
+
+def test_vinted_radius_keeps_only_verified_local_sellers(monkeypatch):
+    import app.sources.vinted as vinted_mod
+    from app.sources.base import SearchQuery as _Q
+    from app.sources.vinted import VintedSource as _VS
+
+    source = _VS()
+    home = (source._settings.home_lat, source._settings.home_lon)
+    items = [
+        {"id": 1, "title": "près", "url": "/items/1", "user": {"id": 10}},
+        {"id": 2, "title": "loin", "url": "/items/2", "user": {"id": 20}},
+        {"id": 3, "title": "inconnu", "url": "/items/3", "user": {"id": 30}},
+    ]
+
+    seen_params = []
+
+    class Client:
+        def search(self, params):
+            seen_params.append(params)
+            return items
+
+    monkeypatch.setattr(vinted_mod, "get_client", lambda base: Client())
+    monkeypatch.setattr(vinted_mod, "locate_sellers", lambda client, ids: {
+        "10": ("Ici", home[0] + 0.05, home[1]),
+        "20": ("Là-bas", home[0] + 3.0, home[1]),
+    })
+
+    kept = source.search_api(_Q("canapé", max_distance_km=30))
+    assert [r.title for r in kept] == ["près"]
+    assert seen_params[-1]["per_page"] == vinted_mod.RADIUS_PER_PAGE
+    assert kept[0].location_city == "Ici" and kept[0].lat is not None
+    # No radius: no lookup, nothing dropped.
+    monkeypatch.setattr(vinted_mod, "locate_sellers", lambda *a: pytest.fail("looked up"))
+    assert len(source.search_api(_Q("canapé"))) == 3
+    assert "per_page" not in seen_params[-1]
+
+
+def test_locate_sellers_caches_and_pauses_on_rate_limit(monkeypatch):
+    import app.sources.vinted_location as loc
+    from app.sources.vinted_api import VintedApiError
+
+    monkeypatch.setattr(loc, "_sellers", {})
+    monkeypatch.setattr(loc, "_cities", {})
+    monkeypatch.setattr(loc, "_paused_until", 0.0)
+    monkeypatch.setattr(loc, "_LOOKUP_SPACING_SECONDS", 0)
+    monkeypatch.setattr(loc, "geocode_city", lambda city, country: (48.0, -1.0))
+    calls = []
+
+    class Client:
+        def get_user(self, uid):
+            calls.append(uid)
+            if uid == "3":
+                raise VintedApiError("slow down", 429)
+            return {"city": "Rennes" if uid == "1" else "", "country_iso_code": "FR"}
+
+    assert loc.locate_sellers(Client(), ["1", "2", "3", "4"]) == {"1": ("Rennes", 48.0, -1.0)}
+    assert calls == ["1", "2", "3"]  # paused after the 429: "4" not asked
+    calls.clear()
+    assert loc.locate_sellers(Client(), ["1", "2"]) == {"1": ("Rennes", 48.0, -1.0)}
+    assert calls == []  # both served from the cache

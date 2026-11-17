@@ -22,7 +22,7 @@ from ..config import get_settings, save_settings
 from ..db import get_session
 from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
-from ..filters import parse_exclude_words
+from ..filters import drop_excluded, drop_out_of_price, parse_exclude_words
 from ..livefeed import live_feed
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
 from ..poller import poll_once, poll_search, poll_topic
@@ -189,7 +189,8 @@ def _parse_search_form(form) -> tuple[dict, dict[str, str]]:
 
     prices: dict[str, float | None] = {}
     raw_prices: dict[str, str] = {}
-    for field in ("price_min", "price_max"):
+    # max_distance_km rides along with the prices: same parsing, same errors.
+    for field in ("price_min", "price_max", "max_distance_km"):
         raw = (form.get(field) or "").strip()
         raw_prices[field] = raw
         prices[field] = None
@@ -644,7 +645,7 @@ async def add_search(slug: str, request: Request, session: Session = Depends(get
         return RedirectResponse(f"/t/{slug}/settings", status_code=303)
     # The add form stays lenient as before: a bad price is dropped rather
     # than blocking the whole search.
-    for field in ("price_min", "price_max"):
+    for field in ("price_min", "price_max", "max_distance_km"):
         if field in errors:
             values[field] = None
     values.pop("_raw_prices")
@@ -672,7 +673,7 @@ def _search_edit_response(
             "exclude_words": search.exclude_words or [],
             "_raw_prices": {
                 field: ("%g" % getattr(search, field)) if getattr(search, field) is not None else ""
-                for field in ("price_min", "price_max")
+                for field in ("price_min", "price_max", "max_distance_km")
             },
         }
     return templates.TemplateResponse("_search_edit.html", {
@@ -798,6 +799,7 @@ def search_results_partial(request: Request):
         query=q,
         price_min=_fnum("price_min"),
         price_max=_fnum("price_max"),
+        max_distance_km=_fnum("max_distance_km"),
         condition=condition,
         sort=sort,
     )
@@ -817,6 +819,16 @@ def search_results_partial(request: Request):
             logger.warning("Live search: source %s failed: %s", source.name.value, exc)
             errors[source.name.value] = str(exc) or type(exc).__name__
 
+    # Some sources silently drop part of the query (Easy Cash loses the price
+    # range when it redirects to a category page), so the budget and the
+    # excluded words are re-checked here on every result.
+    exclude_words = parse_exclude_words(request.query_params.get("exclude") or "")
+    per_source = [
+        drop_out_of_price(
+            drop_excluded(found, exclude_words), query.price_min, query.price_max
+        )
+        for found in per_source
+    ]
     results = _interleave(per_source)
 
     # Each source already applied the sort; for price we still merge-sort across
@@ -881,8 +893,10 @@ async def save_search(request: Request, session: Session = Depends(get_session))
         query=query,
         price_min=_optional_float(form.get("price_min")),
         price_max=_optional_float(form.get("price_max")),
+        max_distance_km=_optional_float(form.get("max_distance_km")),
         condition=(form.get("condition") or None),
         tags=tags,
+        exclude_words=parse_exclude_words(form.get("exclude_words") or ""),
     )
     session.add(search)
     session.commit()

@@ -13,7 +13,7 @@ from sqlalchemy import func, select, update
 
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
-from .filters import drop_excluded
+from .filters import drop_excluded, drop_out_of_price
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
 from .sources.base import SearchQuery
@@ -231,9 +231,10 @@ def _poll_one(topic, search, sources) -> tuple[
             errors[source_name] = str(exc)
             continue
         successful_sources.add(source_name)
-        # Excluded results are left out of the seen set too, so ads stored
+        # Excluded (and out-of-budget) results are left out of the seen set too, so ads stored
         # before the word was excluded fade out like sold ones.
         raws = drop_excluded(raws, getattr(search, "exclude_words", None))
+        raws = drop_out_of_price(raws, search.price_min, search.price_max)
         source_ids[source_name] = {raw.source_id for raw in raws}
 
         with write_lock, session_scope() as session:

@@ -40,6 +40,7 @@ import httpx
 from ..config import get_settings
 from ..cookies import load_cookies
 from ..enums import Source
+from ..geo import haversine_km
 from ..shipping import detect_shipping
 from .base import BaseSource, RawListing, SearchQuery
 from .leboncoin_browser import LeboncoinBrowserError
@@ -142,7 +143,7 @@ class LeboncoinSource(BaseSource):
     def search(self, query: SearchQuery) -> list[RawListing]:
         data = self._post(self._build_body(query))
         ads = data.get("ads") or []
-        return [self._to_raw(ad) for ad in ads]
+        return self._within_radius([self._to_raw(ad) for ad in ads], query)
 
     def search_live(self, query: SearchQuery) -> list[RawListing]:
         """Lightweight search for the live feed: curl only, never the browser.
@@ -162,14 +163,41 @@ class LeboncoinSource(BaseSource):
                     challenge=True,
                 )
         data = self._post_curl(self._build_body(query))
-        return [self._to_raw(ad) for ad in data.get("ads") or []]
+        raws = [self._to_raw(ad) for ad in data.get("ads") or []]
+        return self._within_radius(raws, query)
+
+    def _within_radius(self, raws: list[RawListing], query: SearchQuery) -> list[RawListing]:
+        """Drop ads located beyond ``query.max_distance_km`` from home.
+
+        The radius is already sent to the API; this re-check keeps the promise
+        if Leboncoin ever ignores or loosens the area. Ads without coordinates
+        are kept (nothing to judge them on).
+        """
+        if not query.max_distance_km:
+            return raws
+        home = (self._settings.home_lat, self._settings.home_lon)
+        return [
+            raw for raw in raws
+            if raw.lat is None or raw.lon is None
+            or haversine_km(*home, raw.lat, raw.lon) <= query.max_distance_km
+        ]
 
     def _build_body(self, query: SearchQuery) -> dict:
         sort_by, sort_order = _SORT.get(query.sort, ("time", "desc"))
+        location: dict = {"shippable": False}
+        if query.max_distance_km:
+            # A bare area centred on home, radius in metres. Checked live: a
+            # 30 km area answers ads up to ~23 km away, whereas the website's
+            # city-shaped "locations" entry overshot to ~39 km.
+            location["area"] = {
+                "lat": self._settings.home_lat,
+                "lng": self._settings.home_lon,
+                "radius": int(query.max_distance_km * 1000),
+            }
         filters: dict = {
             "enums": {"ad_type": ["offer"]},
             "keywords": {"text": query.query, "type": "all"},
-            "location": {"shippable": False},
+            "location": location,
         }
         price_range: dict = {}
         if query.price_min:

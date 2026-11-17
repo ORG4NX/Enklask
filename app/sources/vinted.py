@@ -23,8 +23,10 @@ from datetime import datetime, timezone
 from ..config import get_settings
 from ..enums import Source
 from .base import BaseSource, RawListing, SearchQuery
+from ..geo import haversine_km
 from .vinted_api import get_client
 from .vinted_browser import fetch_vinted_html
+from .vinted_location import locate_sellers
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,10 @@ _CONDITION = {
     "fair": "4",
     "for_parts": "7",
 }
+
+
+# Catalogue page size when a radius is set (Vinted's own maximum).
+RADIUS_PER_PAGE = 96
 
 
 class VintedParseError(RuntimeError):
@@ -75,8 +81,40 @@ class VintedSource(BaseSource):
         params = _base_params(query)
         if query.condition and query.condition in _CONDITION:
             params["attribute_ids[status]"] = _CONDITION[query.condition]
-        items = get_client(self._base).search(params)
-        return [self._to_raw(item) for item in items]
+        if query.max_distance_km:
+            # Results are nationwide and most get dropped by the radius, so
+            # ask for a full page to keep a few local ones.
+            params["per_page"] = RADIUS_PER_PAGE
+        client = get_client(self._base)
+        items = client.search(params)
+        raws = [self._to_raw(item) for item in items]
+        if query.max_distance_km:
+            raws = self._within_radius(client, items, raws, query.max_distance_km)
+        return raws
+
+    def _within_radius(
+        self, client, items: list[dict], raws: list[RawListing], radius_km: float
+    ) -> list[RawListing]:
+        """Place each ad at its seller's city and keep those within the radius.
+
+        Vinted has no location filter, so the seller's public city is looked
+        up (cached) and geocoded. Only verified-local ads are kept: a seller
+        who hides their city, or who was not looked up yet (per-search budget,
+        rate limit), is left out — the latter shows up on a later poll once
+        the cache knows them.
+        """
+        seller_ids = [str((item.get("user") or {}).get("id") or "") for item in items]
+        places = locate_sellers(client, seller_ids)
+        home = (self._settings.home_lat, self._settings.home_lon)
+        kept: list[RawListing] = []
+        for raw, seller in zip(raws, seller_ids):
+            place = places.get(seller)
+            if place is None:
+                continue
+            raw.location_city, raw.lat, raw.lon = place
+            if haversine_km(*home, raw.lat, raw.lon) <= radius_km:
+                kept.append(raw)
+        return kept
 
     def search_browser(self, query: SearchQuery) -> list[RawListing]:
         params = _base_params(query)
