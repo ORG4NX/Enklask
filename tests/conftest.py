@@ -9,3 +9,15 @@ def _no_price_target_check(monkeypatch):
     """
     monkeypatch.setattr("app.poller.check_price_targets", lambda: 0)
     monkeypatch.setattr("app.livefeed.check_price_targets", lambda: 0)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_health(monkeypatch, tmp_path):
+    """Source health is mirrored to a JSON file next to the database: keep
+    tests on a throwaway file and a clean slate."""
+    from app import health
+
+    monkeypatch.setattr(health, "_path", lambda: tmp_path / "source_health.json")
+    health.reset()
+    yield
+    health.reset()

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, select, update
 
+from . import health
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
 from .filters import drop_excluded, drop_missing_required, drop_out_of_price
@@ -231,13 +232,18 @@ def _poll_one(topic, search, sources) -> tuple[
         except Exception as exc:
             logger.warning("Source %s failed: %s", source_name, exc)
             errors[source_name] = str(exc)
+            health.record(source_name, error=exc)
             continue
         successful_sources.add(source_name)
         # Excluded (and off-topic or out-of-budget) results are left out of the seen set too, so ads stored
         # before the word was excluded fade out like sold ones.
+        found = len(raws)
         raws = drop_excluded(raws, getattr(search, "exclude_words", None))
         raws = drop_missing_required(raws, getattr(search, "required_words", None))
+        in_words = len(raws)
         raws = drop_out_of_price(raws, search.price_min, search.price_max)
+        # Anything priced out here is a filter the site itself ignored.
+        health.record(source_name, count=found, filters_fixed=in_words - len(raws))
         source_ids[source_name] = {raw.source_id for raw in raws}
 
         with write_lock, session_scope() as session:

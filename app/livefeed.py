@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 
 from .config import get_settings
+from . import health
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
 from .enums import Source
@@ -268,7 +269,9 @@ class Lane:
             raws = self.spec.fetch(query)
         except Exception as exc:  # noqa: BLE001
             self._record_failure(search, exc)
+            health.record(self.spec.source.value, error=exc)
             return False
+        health.record(self.spec.source.value, count=len(raws))
         raws = drop_excluded(raws, search.exclude_words)
         raws = drop_missing_required(raws, search.required_words)
 

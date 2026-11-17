@@ -233,6 +233,10 @@ def _parse_listing_date(card: str, tz) -> datetime | None:
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+class EbayBlocked(RuntimeError):
+    """Every eBay domain tried answered a bot check (or is cooling down)."""
+
+
 class EbaySource(BaseSource):
     name = Source.EBAY
 
@@ -355,11 +359,18 @@ class EbaySource(BaseSource):
         domain = _MARKETPLACE_DOMAINS.get(
             self._settings.ebay_marketplace_id, "www.ebay.fr"
         )
+        self._blocked_domains: list[str] = []
         results = self._scrape_domain(domain, query, prefer_local=True)
         # eBay's localized domains (e.g. ebay.fr) are frequently bot-blocked while
         # www.ebay.com stays reachable — fall back so eBay still returns results.
         if not results and domain != "www.ebay.com":
             results = self._scrape_domain("www.ebay.com", query, prefer_local=False)
+        if not results and self._blocked_domains:
+            # A refusal is not "no results": raise so the health light and
+            # the poller report it as a block.
+            raise EbayBlocked(
+                "eBay challenge page (bot check) on " + ", ".join(self._blocked_domains)
+            )
         return results
 
     def _scrape_domain(
@@ -384,8 +395,11 @@ class EbaySource(BaseSource):
 
         html = self._fetch_via_curl(url, base)
         results = _parse_search_html(html, _domain_tz(domain))
-        if not results and _looks_challenged(html):
-            logger.warning("eBay %s returned a challenge page (bot check / IP).", domain)
+        # Empty html = the domain is cooling down after an earlier block.
+        if not results and (not html or _looks_challenged(html)):
+            if html:
+                logger.warning("eBay %s returned a challenge page (bot check / IP).", domain)
+            getattr(self, "_blocked_domains", []).append(domain)
         return results
 
     def _fetch_via_curl(self, url: str, base: str) -> str:

@@ -1051,3 +1051,28 @@ def test_watch_row_sets_shows_and_clears_a_target_price(client, db_session):
 
     page = client.get("/liked")
     assert "Alerte à" in page.text
+
+
+def test_home_lights_show_what_each_source_answered(client, db_session, monkeypatch):
+    from types import SimpleNamespace
+
+    from app import health
+
+    _topic_with_listing(db_session)
+
+    class Src:
+        def __init__(self, name):
+            self.name = SimpleNamespace(value=name)
+
+    monkeypatch.setattr(
+        web_routes, "get_enabled_sources",
+        lambda: [Src("ebay"), Src("vinted"), Src("easycash")],
+    )
+    health.record("ebay", error=RuntimeError("eBay challenge page (bot check) on www.ebay.fr"))
+    health.record("vinted", count=20)
+    health.record("easycash", count=30, filters_fixed=17)
+
+    html = client.get("/").text
+    assert "· bloqué" in html and "Bloqué par une protection anti-bot" in html
+    assert "Répond normalement" in html
+    assert "Filtre prix ignoré par le site : 17" in html

@@ -22,6 +22,7 @@ from ..config import get_settings, save_settings
 from ..db import get_session
 from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
+from .. import health
 from ..price_alerts import target_reached
 from ..filters import (
     drop_excluded, drop_missing_required, drop_out_of_price, parse_exclude_words,
@@ -416,10 +417,11 @@ def _topic_stat(session: Session, topic: Topic) -> dict:
 def _source_statuses(session: Session) -> list[dict]:
     """Per-source health for the home page.
 
-    ok (green) = returning listings recently, warn (orange) = has listings but
-    none lately, error (red) = enabled but nothing yet. Derived from
-    ``last_seen`` (bumped on every poll for any source that returns results), so
-    it needs no extra tracking and survives restarts.
+    From the recorded search outcomes (``app.health``): ok (green), empty
+    (orange: answers but no results lately), blocked (red: anti-bot / refusal),
+    error (red). A source without any recorded outcome falls back to
+    ``last_seen``: ok = listings seen recently, warn = only older ones,
+    error = none at all.
     """
     from datetime import datetime, timedelta, timezone
 
@@ -437,8 +439,17 @@ def _source_statuses(session: Session) -> list[dict]:
             .select_from(Listing)
             .where(Listing.source == name, Listing.last_seen >= cutoff)
         ) or 0
-        state = "ok" if recent else ("warn" if total else "error")
-        statuses.append({"name": name, "state": state, "recent": recent, "total": total})
+        legacy = "ok" if recent else ("warn" if total else "error")
+        # What the source actually answered lately wins over the last_seen
+        # guess; the guess remains for a source not searched since restart.
+        snap = health.snapshot(name)
+        if snap is not None and snap["state"] is None:
+            snap = None  # not enough evidence yet
+        statuses.append({
+            "name": name, "recent": recent, "total": total,
+            "state": snap["state"] if snap else legacy,
+            "health": snap,
+        })
     return statuses
 
 
@@ -816,27 +827,25 @@ def search_results_partial(request: Request):
 
     per_source: list[list] = []
     errors: dict[str, str] = {}
-    for source in sources:
-        try:
-            found = source.search(query)
-            if found:
-                per_source.append(found)
-        except Exception as exc:
-            logger.warning("Live search: source %s failed: %s", source.name.value, exc)
-            errors[source.name.value] = str(exc) or type(exc).__name__
-
-    # Some sources silently drop part of the query (Easy Cash loses the price
-    # range when it redirects to a category page), so the budget and the
-    # excluded/required words are re-checked here on every result.
     exclude_words = parse_exclude_words(request.query_params.get("exclude") or "")
     required_words = parse_exclude_words(request.query_params.get("require") or "")
-    per_source = [
-        drop_out_of_price(
-            drop_missing_required(drop_excluded(found, exclude_words), required_words),
-            query.price_min, query.price_max,
-        )
-        for found in per_source
-    ]
+    for source in sources:
+        name = source.name.value
+        try:
+            found = source.search(query)
+        except Exception as exc:
+            logger.warning("Live search: source %s failed: %s", name, exc)
+            errors[name] = str(exc) or type(exc).__name__
+            health.record(name, error=exc)
+            continue
+        # Some sources silently drop part of the query (Easy Cash loses the
+        # price range when it redirects to a category page), so the budget
+        # and the excluded/required words are re-checked on every result.
+        kept = drop_missing_required(drop_excluded(found, exclude_words), required_words)
+        in_budget = drop_out_of_price(kept, query.price_min, query.price_max)
+        health.record(name, count=len(found), filters_fixed=len(kept) - len(in_budget))
+        if in_budget:
+            per_source.append(in_budget)
     results = _interleave(per_source)
 
     # Each source already applied the sort; for price we still merge-sort across

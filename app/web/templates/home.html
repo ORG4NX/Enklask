@@ -5,19 +5,52 @@
 {% if source_status or topic_stats %}
 <div class="flex items-center gap-2 flex-wrap mb-6">
   {% for s in source_status %}
+  {% set h = s.health %}
+  {# Tooltip: what the source answered, when, and what to do about it. #}
+  {% if h %}
+    {% if s.state == 'ok' %}
+      {% set tip = "Répond normalement — dernières annonces " ~ (h.last_results_at | timeago) %}
+    {% elif s.state == 'empty' %}
+      {% set tip = "Répond, mais 0 résultat sur les " ~ h.empty_streak ~ " dernières recherches" ~ ((" — dernières annonces " ~ (h.last_results_at | timeago)) if h.last_results_at else "") %}
+    {% elif s.state == 'blocked' %}
+      {% set tip = "Bloqué par une protection anti-bot " ~ (h.last_at | timeago) ~ " : " ~ h.last_error %}
+    {% else %}
+      {% set tip = "Erreur " ~ (h.last_at | timeago) ~ " : " ~ h.last_error %}
+    {% endif %}
+    {% if h.filters_ignored %}
+      {% set tip = tip ~ "\nFiltre prix ignoré par le site : " ~ h.filters_fixed ~ " annonce(s) hors budget écartée(s) par Enklask" %}
+    {% endif %}
+  {% elif s.state == 'ok' %}
+    {% set tip = "Actif — " ~ s.recent ~ " annonce(s) vue(s) récemment" %}
+  {% elif s.state == 'warn' %}
+    {% set tip = "Aucune annonce récente (" ~ s.total ~ " au total)" %}
+  {% else %}
+    {% set tip = "Aucune annonce enregistrée pour l'instant" %}
+  {% endif %}
   <span class="source-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium
                {% if s.state == 'ok' %}bg-emerald-50 text-emerald-700
-               {% elif s.state == 'warn' %}bg-amber-50 text-amber-700
+               {% elif s.state in ('warn', 'empty') %}bg-amber-50 text-amber-700
                {% else %}bg-red-50 text-red-600{% endif %}"
-        title="{% if s.state == 'ok' %}Actif — {{ s.recent }} annonce{{ 's' if s.recent != 1 else '' }} vue{{ 's' if s.recent != 1 else '' }} récemment{% elif s.state == 'warn' %}Aucune annonce récente ({{ s.total }} au total) — peut-être bloqué{% else %}Aucune annonce — source injoignable ?{% endif %}">
+        title="{{ tip }}">
     {% if s.state == 'ok' %}
     <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z" clip-rule="evenodd"/></svg>
-    {% elif s.state == 'warn' %}
+    {% elif s.state == 'blocked' %}
+    {# Shield: refused by an anti-bot, not an outage. #}
+    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 1.5l7 2.6v5.2c0 4.3-3 7.9-7 9.2-4-1.3-7-4.9-7-9.2V4.1l7-2.6zM7.3 7.3a1 1 0 011.4 0L10 8.6l1.3-1.3a1 1 0 111.4 1.4L11.4 10l1.3 1.3a1 1 0 01-1.4 1.4L10 11.4l-1.3 1.3a1 1 0 01-1.4-1.4L8.6 10 7.3 8.7a1 1 0 010-1.4z" clip-rule="evenodd"/></svg>
+    {% elif s.state in ('warn', 'empty') %}
     <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
     {% else %}
     <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.7 7.3a1 1 0 00-1.4 1.4L8.6 10l-1.3 1.3a1 1 0 101.4 1.4L10 11.4l1.3 1.3a1 1 0 001.4-1.4L11.4 10l1.3-1.3a1 1 0 00-1.4-1.4L10 8.6 8.7 7.3z" clip-rule="evenodd"/></svg>
     {% endif %}
     {{ s.name | source_label }}
+    {% if s.state == 'blocked' %}<span class="font-normal opacity-80">· bloqué</span>
+    {% elif s.state == 'empty' %}<span class="font-normal opacity-80">· 0 résultat</span>
+    {% elif s.state == 'error' and h %}<span class="font-normal opacity-80">· erreur</span>
+    {% endif %}
+    {% if h and h.filters_ignored %}
+    {# Funnel: the site ignored a filter, the app re-filtered. #}
+    <svg class="w-3 h-3 shrink-0 opacity-70" viewBox="0 0 16 16" fill="currentColor" aria-label="filtre prix ignoré par le site"><path d="M1.5 2h13l-5 6.2V13l-3 1.5V8.2z"/></svg>
+    {% endif %}
   </span>
   {% endfor %}
   {% if topic_stats %}
