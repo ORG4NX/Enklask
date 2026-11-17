@@ -69,6 +69,9 @@ class Settings(BaseModel):
     label_emmaus_base_url: str = "https://www.label-emmaus.co"
     # AliExpress (unofficial, public search page, no key): new parts and kits
     aliexpress_base_url: str = "https://fr.aliexpress.com"
+    # Camoufox fallback when the plain request gets the captcha page.
+    aliexpress_browser_fallback: bool = True
+    aliexpress_browser_profile_dir: str = "data/aliexpress-camoufox-profile"
 
     # Shared cookies.txt file (Netscape format, e.g. from "Get cookies.txt LOCALLY").
     cookies_file: str = "data/cookies.txt"

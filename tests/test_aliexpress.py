@@ -69,11 +69,23 @@ def source(monkeypatch):
         calls.append((url, params))
         return source.response
 
+    browser_calls = []
+
+    def fake_browser(base, profile, url):
+        browser_calls.append(url)
+        if source.browser_page is None:
+            raise aliexpress.AliExpressBrowserError("captcha in the browser too")
+        return source.browser_page
+
     monkeypatch.setattr(aliexpress.cffi_requests, "get", fake_get)
+    monkeypatch.setattr(aliexpress, "fetch_aliexpress_html", fake_browser)
     aliexpress.reset_cooldown()
     source.calls = calls
+    source.browser_calls = browser_calls
     source.response = _Resp(PAGE)
-    return source
+    source.browser_page = None  # None = the browser gets the captcha too
+    yield source
+    aliexpress.reset_cooldown()
 
 
 def test_search_sends_filters_and_keeps_on_topic_titles(source):
@@ -97,13 +109,27 @@ def test_second_hand_condition_returns_nothing(source):
     assert source.calls == []
 
 
-def test_captcha_page_raises_blocked(source):
+def test_captcha_page_raises_blocked_when_the_browser_fails_too(source):
     source.response = _Resp("<html>punish captcha slide to verify</html>")
-    with pytest.raises(AliExpressBlocked):
+    with pytest.raises(AliExpressBlocked, match="navigateur de secours"):
         AliExpressSource().search(SearchQuery("gba"))
+    aliexpress.reset_cooldown()
     source.response = _Resp("", status=429)
     with pytest.raises(AliExpressBlocked):
         AliExpressSource().search(SearchQuery("gba"))
+
+
+def test_captcha_falls_back_to_the_browser_then_keeps_using_it(source):
+    source.response = _Resp("<html>punish</html>")
+    source.browser_page = PAGE
+    raws = AliExpressSource().search(SearchQuery("gba ips", price_max=60))
+    assert [r.source_id for r in raws] == ["1005001"]
+    assert source.browser_calls == [
+        "https://fr.aliexpress.com/w/wholesale-gba-ips.html?SearchText=gba+ips&maxPrice=60"
+    ]
+    # The plain request is left alone for a while: straight to the browser.
+    AliExpressSource().search(SearchQuery("gba ips"))
+    assert len(source.calls) == 1 and len(source.browser_calls) == 2
 
 
 def test_aliexpress_is_only_queried_when_ticked():
@@ -120,15 +146,16 @@ def test_aliexpress_is_only_queried_when_ticked():
     assert wanted_sources([ebay, ali], ["ebay", "aliexpress"]) == [ebay, ali]
 
 
-def test_a_captcha_pauses_the_source(source):
+def test_a_captcha_in_both_pauses_the_source(source):
     source.response = _Resp("<html>punish</html>")
     with pytest.raises(AliExpressBlocked):
         AliExpressSource().search(SearchQuery("gba"))
     source.response = _Resp(PAGE)
+    source.browser_page = PAGE
     with pytest.raises(AliExpressBlocked, match="cooldown"):
         AliExpressSource().search(SearchQuery("gba"))
-    assert len(source.calls) == 1  # the paused search did not reach the site
-    aliexpress.reset_cooldown()
+    # The paused search reached neither the site nor the browser.
+    assert len(source.calls) == 1 and len(source.browser_calls) == 1
 
 
 def test_search_counts_the_off_topic_results(source):

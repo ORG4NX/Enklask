@@ -20,11 +20,16 @@ import logging
 import re
 import threading
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from ..config import get_settings
 from ..enums import Source
 from ..filters import drop_off_query
+from .aliexpress_browser import (
+    ITEMS_MARKER,
+    AliExpressBrowserError,
+    fetch_aliexpress_html,
+)
 from .base import BaseSource, RawListing, SearchQuery
 
 logger = logging.getLogger(__name__)
@@ -39,12 +44,16 @@ except ImportError:  # pragma: no cover - curl_cffi is a regular dependency
 # the loose search would fill the page with noise.
 _SORTS = {"price_asc": "price_asc", "price_desc": "price_desc"}
 
-_ITEMS_KEY = '"itemList":{"content":'
+_ITEMS_KEY = ITEMS_MARKER
 _BLOCKED_RE = re.compile(r"punish|captcha|x5sec|slide to verify", re.I)
 # After a captcha, leave the site alone for a while: insisting only extends
 # the block (it showed up after ~25 searches in 10 minutes while testing).
 BLOCK_COOLDOWN_SECONDS = 30 * 60
 _blocked_until = 0.0
+# After a captcha on the plain request, go through the browser for a while
+# instead of asking again without one.
+DIRECT_BLOCK_SECONDS = 60 * 60
+_direct_blocked_until = 0.0
 _block_lock = threading.Lock()
 
 _SHIPPING_RE = re.compile(r"livraison[^0-9]{0,12}([0-9]+(?:[.,][0-9]{1,2})?)\s*€", re.I)
@@ -88,27 +97,60 @@ class AliExpressSource(BaseSource):
         if sort:
             params["SortType"] = sort
         slug = quote(re.sub(r"\s+", "-", query.query.strip()), safe="-")
-        resp = cffi_requests.get(
-            f"{self._base}/w/wholesale-{slug}.html",
-            params=params,
-            impersonate="chrome",
-            headers={"Accept-Language": "fr-FR,fr;q=0.9"},
-            timeout=30,
-        )
-        if resp.status_code in (403, 429):
-            _start_cooldown()
-            raise AliExpressBlocked(f"AliExpress HTTP {resp.status_code}")
-        resp.raise_for_status()
-        html = resp.text
-        if _ITEMS_KEY not in html and _BLOCKED_RE.search(html):
-            _start_cooldown()
-            raise AliExpressBlocked("AliExpress captcha (punish page)")
+        url = f"{self._base}/w/wholesale-{slug}.html"
+
+        html = None
+        if time.monotonic() >= _direct_blocked_until:
+            html, why = self._fetch_direct(url, params)
+            if html is None:
+                _block_direct()
+                logger.info("AliExpress: %s; using the browser", why)
+        if html is None:
+            html = self._fetch_browser(f"{url}?{urlencode(params)}")
         raws = parse_search_page(html, self._base)
         kept = drop_off_query(raws, query.query)
         # Shown by the instant search, so an all-filtered page does not look
         # like a site with nothing to sell.
         self.last_off_topic = len(raws) - len(kept)
         return kept
+
+
+    def _fetch_direct(self, url: str, params: dict) -> tuple[str | None, str]:
+        """The page through curl_cffi, or (None, reason) on the anti-bot page."""
+        resp = cffi_requests.get(
+            url,
+            params=params,
+            impersonate="chrome",
+            headers={"Accept-Language": "fr-FR,fr;q=0.9"},
+            timeout=30,
+        )
+        if resp.status_code in (403, 429):
+            return None, f"HTTP {resp.status_code}"
+        resp.raise_for_status()
+        html = resp.text
+        if _ITEMS_KEY not in html and _BLOCKED_RE.search(html):
+            return None, "captcha (punish page)"
+        return html, ""
+
+    def _fetch_browser(self, url: str) -> str:
+        """The page through the persistent browser; pauses the source when the
+        browser is refused too (or turned off)."""
+        if not self._settings.aliexpress_browser_fallback:
+            _start_cooldown()
+            raise AliExpressBlocked("AliExpress captcha (navigateur de secours désactivé)")
+        try:
+            return fetch_aliexpress_html(
+                self._base, self._settings.aliexpress_browser_profile_dir, url
+            )
+        except AliExpressBrowserError as exc:
+            _start_cooldown()
+            raise AliExpressBlocked(f"AliExpress captcha, navigateur de secours aussi : {exc}") from exc
+
+
+def _block_direct() -> None:
+    global _direct_blocked_until
+    with _block_lock:
+        _direct_blocked_until = time.monotonic() + DIRECT_BLOCK_SECONDS
 
 
 def _start_cooldown() -> None:
@@ -120,9 +162,9 @@ def _start_cooldown() -> None:
 
 def reset_cooldown() -> None:
     """Forget a previous block (tests)."""
-    global _blocked_until
+    global _blocked_until, _direct_blocked_until
     with _block_lock:
-        _blocked_until = 0.0
+        _blocked_until = _direct_blocked_until = 0.0
 
 
 def parse_search_page(html: str, base_url: str = "https://fr.aliexpress.com") -> list[RawListing]:
