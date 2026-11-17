@@ -31,6 +31,13 @@
     <span class="text-sm font-medium text-gray-400 shrink-0 whitespace-nowrap">{{ listing_count }} annonce{{ 's' if listing_count != 1 else '' }}</span>
   </div>
   <div class="flex items-center gap-2 shrink-0">
+    {% if suggestion_count %}
+    <a href="/t/{{ topic.slug }}/settings"
+       class="hidden sm:inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100 transition"
+       title="D'après les annonces masquées, des mots pourraient être exclus de tes recherches">
+      {{ suggestion_count }} mot{{ 's' if suggestion_count != 1 else '' }} à exclure ?
+    </a>
+    {% endif %}
     <a href="/t/{{ topic.slug }}/settings"
        class="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-warm-100 transition"
        title="Paramètres du topic" aria-label="Paramètres du topic">

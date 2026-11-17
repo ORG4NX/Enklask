@@ -109,6 +109,12 @@ def _ensure_saved_search_columns() -> None:
                 text("ALTER TABLE saved_searches ADD COLUMN required_words TEXT DEFAULT '[]'")
             )
         logger.info("Added 'required_words' column to saved_searches.")
+    if "ignored_suggestions" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE saved_searches ADD COLUMN ignored_suggestions TEXT DEFAULT '[]'")
+            )
+        logger.info("Added 'ignored_suggestions' column to saved_searches.")
 
 
 def _ensure_listing_topic_columns() -> None:

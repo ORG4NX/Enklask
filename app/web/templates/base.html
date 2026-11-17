@@ -164,7 +164,7 @@
 
   <!-- Toasts: transient outcome messages (refresh results, errors). Fired by
        the server through HX-Trigger {"toast": {"message", "level"}}. -->
-  <div id="toasts" class="fixed bottom-4 right-4 z-[120] flex flex-col gap-2 items-end pointer-events-none" aria-live="polite"></div>
+  <div id="toasts" class="fixed bottom-20 right-4 z-[120] flex flex-col gap-2 items-end pointer-events-none" aria-live="polite"></div>
 
   <script>
     var TOAST_STYLES = {
@@ -365,6 +365,33 @@
       else if (e.key === 'ArrowLeft') previewNav(-1);
       else if (e.key === 'ArrowRight') previewNav(1);
     });
+  </script>
+
+  <!-- Back to top: shown once the page has scrolled past a screen. -->
+  <button type="button" id="back-to-top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})"
+          title="Remonter en haut" aria-label="Remonter en haut de la page"
+          class="fixed bottom-4 right-4 z-[90] w-11 h-11 rounded-full bg-white border border-warm-200 shadow-lg
+                 text-gray-500 hover:text-brand hover:border-brand/30 flex items-center justify-center
+                 transition-all duration-200 opacity-0 translate-y-3 pointer-events-none">
+    <svg class="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5L10 4l5.5 5.5"/></svg>
+  </button>
+  <script>
+    (function () {
+      var btn = document.getElementById('back-to-top');
+      var shown = false;
+      function update() {
+        var show = window.scrollY > window.innerHeight * 0.8;
+        if (show === shown) return;
+        shown = show;
+        btn.classList.toggle('opacity-0', !show);
+        btn.classList.toggle('translate-y-3', !show);
+        btn.classList.toggle('pointer-events-none', !show);
+        btn.tabIndex = show ? 0 : -1;
+      }
+      btn.tabIndex = -1;
+      window.addEventListener('scroll', update, {passive: true});
+      update();
+    })();
   </script>
 
 </body>

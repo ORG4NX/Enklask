@@ -31,6 +31,29 @@
     {% if search.sources %}
     <span class="text-[10px] text-gray-400 mt-1 inline-block">· {% for src in search.sources %}{{ (source_labels or {}).get(src, src) }}{% if not loop.last %}, {% endif %}{% endfor %} seulement</span>
     {% endif %}
+    {% if suggestions %}
+    {# Words common in the titles hidden from this search, rare in the kept ones. #}
+    <div class="mt-2 flex items-center gap-1.5 flex-wrap" aria-label="Mots à exclure suggérés">
+      <span class="text-[11px] text-gray-500" title="D'après les annonces que tu as masquées pour cette recherche">Exclure ?</span>
+      {% for s in suggestions %}
+      <span class="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700 text-[11px] font-medium overflow-hidden">
+        <button type="button"
+                hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}/suggestions/accept"
+                hx-vals='{{ {"word": s.word} | tojson }}'
+                hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML"
+                title="Dans {{ s.hidden }} annonce{{ 's' if s.hidden != 1 else '' }} masquée{{ 's' if s.hidden != 1 else '' }}{% if s.kept %} et {{ s.kept }} gardée{{ 's' if s.kept != 1 else '' }}{% endif %} — ajouter aux mots exclus"
+                aria-label="Exclure le mot {{ s.word }}"
+                class="pl-2 pr-1.5 py-0.5 hover:bg-amber-100 transition">+ {{ s.word }} <span class="font-normal opacity-70">{{ s.hidden }}</span></button>
+        <button type="button"
+                hx-post="/t/{{ topic.slug }}/searches/{{ search.id }}/suggestions/dismiss"
+                hx-vals='{{ {"word": s.word} | tojson }}'
+                hx-target="#search-row-{{ search.id }}" hx-swap="outerHTML"
+                title="Ne plus suggérer" aria-label="Ne plus suggérer {{ s.word }}"
+                class="px-1.5 py-0.5 border-l border-amber-200 hover:bg-amber-100 transition">×</button>
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
   {% set rf = refresh if refresh is defined and refresh else none %}

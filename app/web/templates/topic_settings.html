@@ -51,6 +51,7 @@
       {% for search in topic.searches %}
       {% set count = search_counts.get(search.id, 0) %}
       {% set refresh = search_refresh.get(search.id) %}
+      {% set suggestions = search_suggestions.get(search.id) %}
       {% include "_search_row.html" %}
       {% endfor %}
     </div>

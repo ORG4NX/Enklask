@@ -24,6 +24,7 @@ from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
 from .. import health
 from ..price_alerts import target_reached
+from ..suggestions import suggest_exclusions
 from ..filters import (
     drop_excluded, drop_missing_required, drop_out_of_price, parse_exclude_words,
 )
@@ -582,6 +583,9 @@ def topic_detail(
         "selected": filters,
         "active_tags": active_tags,
         "listing_count": listing_count,
+        "suggestion_count": sum(
+            len(_exclusion_suggestions(session, s)) for s in topic.searches
+        ),
         "enabled_sources": [s.name.value for s in get_enabled_sources()],
         **page,
         **_filter_context(),
@@ -613,6 +617,9 @@ def topic_settings(slug: str, request: Request, session: Session = Depends(get_s
         "request": request,
         "topic": topic,
         "search_counts": search_counts,
+        "search_suggestions": {
+            s.id: _exclusion_suggestions(session, s) for s in topic.searches
+        },
         "search_refresh": {
             s.id: _refresh_view(jobs.get(search_key(s.id))) for s in topic.searches
         },
@@ -668,6 +675,26 @@ async def add_search(slug: str, request: Request, session: Session = Depends(get
     session.add(SavedSearch(topic_id=topic.id, **values))
     session.commit()
     return RedirectResponse(f"/t/{slug}/settings", status_code=303)
+
+
+def _exclusion_suggestions(session: Session, search: SavedSearch) -> list[dict]:
+    """Excluded words worth offering for ``search``, from what was hidden.
+
+    Built from the listings this search brought in: the hidden ones against
+    all the others (new, seen and followed alike).
+    """
+    rows = session.execute(
+        select(Listing.title, Listing.status)
+        .join(ListingTopic, ListingTopic.listing_id == Listing.id)
+        .where(ListingTopic.search_id == search.id)
+    ).all()
+    hidden = [t for t, st in rows if st == ListingStatus.HIDDEN.value]
+    kept = [t for t, st in rows if st != ListingStatus.HIDDEN.value]
+    known = [
+        search.query, *(search.required_words or []),
+        *(search.exclude_words or []), *(search.ignored_suggestions or []),
+    ]
+    return suggest_exclusions(hidden, kept, known=known)
 
 
 def _topic_search(session: Session, slug: str, search_id: int) -> tuple[Topic, SavedSearch]:
@@ -730,6 +757,37 @@ async def update_search(
     for field, value in values.items():
         setattr(search, field, value)
     session.commit()
+    return _search_row_response(request, session, topic, search_id)
+
+
+@router.post("/t/{slug}/searches/{search_id}/suggestions/accept", response_class=HTMLResponse)
+def accept_suggestion(
+    slug: str, search_id: int, request: Request,
+    word: str = Form(""), session: Session = Depends(get_session),
+):
+    """Add a suggested word to the search's excluded words."""
+    topic, search = _topic_search(session, slug, search_id)
+    word = word.strip()
+    if word:
+        merged = parse_exclude_words(", ".join([*(search.exclude_words or []), word]))
+        if merged != list(search.exclude_words or []):
+            search.exclude_words = merged
+            session.commit()
+    return _search_row_response(request, session, topic, search_id)
+
+
+@router.post("/t/{slug}/searches/{search_id}/suggestions/dismiss", response_class=HTMLResponse)
+def dismiss_suggestion(
+    slug: str, search_id: int, request: Request,
+    word: str = Form(""), session: Session = Depends(get_session),
+):
+    """Stop suggesting ``word`` for this search."""
+    topic, search = _topic_search(session, slug, search_id)
+    word = word.strip()[:64]
+    ignored = list(search.ignored_suggestions or [])
+    if word and word not in ignored:
+        search.ignored_suggestions = (ignored + [word])[-200:]
+        session.commit()
     return _search_row_response(request, session, topic, search_id)
 
 
@@ -1218,6 +1276,7 @@ def _search_row_response(
             "request": request, "search": search, "topic": topic,
             "count": count, "condition_labels": CONDITION_LABELS,
             "source_labels": SOURCE_LABELS, "refresh": view,
+            "suggestions": _exclusion_suggestions(session, search),
         },
         headers=headers,
     )

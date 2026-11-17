@@ -1076,3 +1076,55 @@ def test_home_lights_show_what_each_source_answered(client, db_session, monkeypa
     assert "· bloqué" in html and "Bloqué par une protection anti-bot" in html
     assert "Répond normalement" in html
     assert "Filtre prix ignoré par le site : 17" in html
+
+
+def _search_with_hidden(session):
+    from app.enums import ListingStatus
+    topic = Topic(name="GB", slug="gb")
+    session.add(topic)
+    session.flush()
+    search = SavedSearch(topic_id=topic.id, name="player", query="gameboy player")
+    session.add(search)
+    session.flush()
+    titles = [
+        ("Console Wii blanche", ListingStatus.HIDDEN), ("Wii + manettes", ListingStatus.HIDDEN),
+        ("Lot Wii Sports", ListingStatus.HIDDEN), ("GameCube violette", ListingStatus.HIDDEN),
+        ("Game Boy Player GameCube", ListingStatus.SEEN), ("GameBoy Player + disque", ListingStatus.NEW),
+    ]
+    for i, (title, status) in enumerate(titles):
+        listing = Listing(source="ebay", source_id=str(i), title=title, url=f"https://x/{i}",
+                          price=50.0, status=status.value)
+        session.add(listing)
+        session.flush()
+        session.add(ListingTopic(listing_id=listing.id, topic_id=topic.id, search_id=search.id))
+    session.commit()
+    return topic, search
+
+
+def test_settings_suggest_words_from_hidden_listings(client, db_session):
+    topic, search = _search_with_hidden(db_session)
+    html = client.get("/t/gb/settings").text
+    assert "Exclure ?" in html
+    assert "+ wii" in html
+    assert "1 mot à exclure ?" in client.get("/t/gb").text
+
+
+def test_accepting_a_suggestion_adds_the_excluded_word(client, db_session):
+    topic, search = _search_with_hidden(db_session)
+    r = client.post(f"/t/gb/searches/{search.id}/suggestions/accept", data={"word": "wii"},
+                    headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert "sans : wii" in r.text
+    assert "+ wii" not in r.text
+    db_session.expire_all()
+    assert db_session.get(SavedSearch, search.id).exclude_words == ["wii"]
+
+
+def test_dismissed_suggestion_is_not_offered_again(client, db_session):
+    topic, search = _search_with_hidden(db_session)
+    r = client.post(f"/t/gb/searches/{search.id}/suggestions/dismiss", data={"word": "wii"},
+                    headers={"HX-Request": "true"})
+    assert "+ wii" not in r.text
+    db_session.expire_all()
+    assert db_session.get(SavedSearch, search.id).ignored_suggestions == ["wii"]
+    assert "+ wii" not in client.get("/t/gb/settings").text
