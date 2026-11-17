@@ -15,7 +15,9 @@ from . import health
 from .db import session_scope
 from .deals import mark_deals
 from .dedup import upsert_listing, write_lock
-from .filters import drop_excluded, drop_missing_required, drop_out_of_price
+from .filters import (
+    drop_excluded, drop_missing_required, drop_off_query, drop_out_of_price,
+)
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .notifier import Notifier, NotifyItem
 from .price_alerts import check_gone_listings, check_price_targets
@@ -114,7 +116,7 @@ def poll_search(search_id: int) -> PollResult:
         # Touch attributes so they stay usable after the session closes.
         _ = (search.query, search.price_min, search.price_max, search.max_distance_km,
              search.condition, search.sources, search.tags, search.exclude_words,
-             search.required_words, search.notify_deals_only,
+             search.required_words, search.notify_deals_only, search.strict_titles,
              search.id,
              topic.id, topic.name, topic.apprise_url_list)
         is_cold_start = (
@@ -238,6 +240,8 @@ def _poll_one(topic, search, sources) -> tuple[
         found = len(raws)
         raws = drop_excluded(raws, getattr(search, "exclude_words", None))
         raws = drop_missing_required(raws, getattr(search, "required_words", None))
+        if getattr(search, "strict_titles", False):
+            raws = drop_off_query(raws, search.query)
         in_words = len(raws)
         raws = drop_out_of_price(raws, search.price_min, search.price_max)
         # Anything priced out here is a filter the site itself ignored.

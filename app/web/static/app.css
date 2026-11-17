@@ -214,3 +214,7 @@ html[data-zoom="150"] .max-h-\[45vh\] { max-height: 30vh; }
 @media (min-width: 768px) {
   html[data-zoom="150"] .md\:max-h-\[90vh\] { max-height: 60vh; }
 }
+
+/* Home feed: listings already seen fade back so the new ones stand out. */
+.feed-seen > :not(script) { opacity: 0.6; transition: opacity .15s; }
+.feed-seen:hover > :not(script) { opacity: 1; }

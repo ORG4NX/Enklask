@@ -38,8 +38,16 @@
     {% if feed_topic %}
     <a href="/t/{{ feed_topic.slug }}" class="text-xs font-medium text-brand hover:underline shrink-0">Ouvrir le topic &rarr;</a>
     {% endif %}
+    {% if feed_unread %}
     <button type="button"
-            class="ml-auto shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold border transition
+            class="ml-auto shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold border border-warm-200 bg-white text-gray-500 hover:text-brand hover:border-brand/30 transition"
+            title="Les {{ feed_unread }} nouvelle{{ 's' if feed_unread != 1 else '' }} annonce{{ 's' if feed_unread != 1 else '' }}{% if feed_topic %} de « {{ feed_topic.name }} »{% endif %} passent en vues"
+            hx-post="/partials/feed/seen?{{ feed_query(feed_topic_id, feed_deals) }}" hx-target="#home-feed" hx-swap="outerHTML">
+      ✓ Tout marquer comme vu <span class="font-normal opacity-70">({{ feed_unread }})</span>
+    </button>
+    {% endif %}
+    <button type="button"
+            class="{{ '' if feed_unread else 'ml-auto ' }}shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold border transition
                    {{ 'bg-emerald-50 border-emerald-200 text-emerald-700' if feed_deals else 'bg-white border-warm-200 text-gray-500 hover:text-emerald-700' }}"
             aria-pressed="{{ 'true' if feed_deals else 'false' }}"
             title="Seulement les annonces sous 60 % du prix médian de leur recherche"
@@ -58,4 +66,19 @@
   </p>
   {% endif %}
   {% include "_feed_poller.html" %}
+  <script>
+    // A new feed row opened through its link or preview becomes "seen" (the
+    // row is re-rendered dimmed); the follow/hide buttons do not count.
+    if (!window.feedOpened) {
+      window.feedOpened = function (event, id) {
+        var t = event.target;
+        if (t.closest('[hx-post]')) return;
+        if (!t.closest('a[href], button[onclick^="openPreview"]')) return;
+        var row = document.getElementById('feed-' + id);
+        if (!row || !row.hasAttribute('data-unread')) return;
+        row.removeAttribute('data-unread');
+        htmx.ajax('POST', '/partials/listings/' + id + '/seen', {target: row, swap: 'outerHTML'});
+      };
+    }
+  </script>
 </div>

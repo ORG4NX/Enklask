@@ -42,7 +42,7 @@ from . import health
 from .db import session_scope
 from .dedup import upsert_listing, write_lock
 from .enums import Source
-from .filters import drop_excluded, drop_missing_required
+from .filters import drop_excluded, drop_missing_required, drop_off_query
 from .jobs import jobs
 from .models import Listing, ListingTopic, SavedSearch, Topic
 from .deals import mark_deals
@@ -103,6 +103,7 @@ class WatchedSearch:
     topic_slug: str
     apprise_urls: list[str]
     notify_deals_only: bool = False
+    strict_titles: bool = False
 
 
 @dataclass
@@ -151,6 +152,7 @@ def watched_searches(source: Source = Source.VINTED) -> list[WatchedSearch]:
                 exclude_words=list(search.exclude_words or []),
                 required_words=list(search.required_words or []),
                 notify_deals_only=bool(search.notify_deals_only),
+                strict_titles=bool(search.strict_titles),
                 topic_id=topic.id, topic_name=topic.name, topic_slug=topic.slug,
                 apprise_urls=topic.apprise_url_list,
             ))
@@ -277,6 +279,8 @@ class Lane:
         health.record(self.spec.source.value, count=len(raws))
         raws = drop_excluded(raws, search.exclude_words)
         raws = drop_missing_required(raws, search.required_words)
+        if search.strict_titles:
+            raws = drop_off_query(raws, search.query)
 
         with write_lock, session_scope() as session:
             baseline = _is_baseline(session, search.id, self.spec.source)

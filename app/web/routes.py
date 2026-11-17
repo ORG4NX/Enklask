@@ -27,8 +27,8 @@ from ..deals import annotate_deals
 from ..price_alerts import listing_gone, target_reached
 from ..suggestions import suggest_exclusions
 from ..filters import (
-    drop_excluded, drop_missing_required, drop_out_of_price, excluded_by,
-    parse_exclude_words,
+    drop_excluded, drop_missing_required, drop_off_query, drop_out_of_price,
+    excluded_by, parse_exclude_words,
 )
 from ..livefeed import live_feed
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
@@ -231,6 +231,7 @@ def _parse_search_form(form) -> tuple[dict, dict[str, str]]:
         "sources": sources, "exclude_words": exclude_words,
         "required_words": required_words, **prices,
         "notify_deals_only": bool(form.get("notify_deals_only")),
+        "strict_titles": bool(form.get("strict_titles")),
         "_raw_prices": raw_prices,
     }
     return values, errors
@@ -506,6 +507,17 @@ def _feed_decorate(
     ]
 
 
+def _feed_link(topic_id: int | None):
+    """SQL condition: the listing is still offered by a search (of ``topic_id``
+    when given)."""
+    link = exists().where(
+        ListingTopic.listing_id == Listing.id, ListingTopic.is_available.is_(True)
+    )
+    if topic_id is not None:
+        link = link.where(ListingTopic.topic_id == topic_id)
+    return link
+
+
 def _feed_rows(
     session: Session, *, topic_id: int | None, deals_only: bool,
     after: int | None = None, before: int | None = None,
@@ -516,14 +528,9 @@ def _feed_rows(
     given), hidden ones left out, newest first. With ``deals_only`` a wider
     batch is read and only the deals are kept: the badge is computed here,
     not in SQL."""
-    link = exists().where(
-        ListingTopic.listing_id == Listing.id, ListingTopic.is_available.is_(True)
-    )
-    if topic_id is not None:
-        link = link.where(ListingTopic.topic_id == topic_id)
     stmt = (
         select(Listing)
-        .where(Listing.status != ListingStatus.HIDDEN.value, link)
+        .where(Listing.status != ListingStatus.HIDDEN.value, _feed_link(topic_id))
         .order_by(Listing.id.desc())
     )
     if after is not None:
@@ -557,6 +564,10 @@ def _feed_context(session: Session, topic_id: int | None, deals_only: bool) -> d
         topic_id = None
     rows, more_before = _feed_rows(session, topic_id=topic_id, deals_only=deals_only)
     return {
+        "feed_unread": session.scalar(
+            select(func.count()).select_from(Listing)
+            .where(Listing.status == ListingStatus.NEW.value, _feed_link(topic_id))
+        ) or 0,
         "topic_stats": [_topic_stat(session, t) for t in topics],
         "feed_rows": rows,
         "feed_more_before": more_before,
@@ -617,6 +628,36 @@ def feed_partial(
     return templates.TemplateResponse("_feed.html", {
         "request": request, **_feed_context(session, topic_id, deals_only),
     })
+
+
+@router.post("/partials/feed/seen", response_class=HTMLResponse)
+def feed_mark_all_seen(request: Request, session: Session = Depends(get_session)):
+    """"Tout marquer comme vu": the new listings of the feed (all topics, or
+    the filtered one) become seen; the feed comes back with zeroed counts."""
+    topic_id, deals_only = _feed_params(request)
+    session.execute(
+        update(Listing)
+        .where(Listing.status == ListingStatus.NEW.value, _feed_link(topic_id))
+        .values(status=ListingStatus.SEEN.value)
+        .execution_options(synchronize_session=False)
+    )
+    session.commit()
+    return templates.TemplateResponse("_feed.html", {
+        "request": request, **_feed_context(session, topic_id, deals_only),
+    })
+
+
+@router.post("/partials/listings/{listing_id}/seen", response_class=HTMLResponse)
+def mark_seen(listing_id: int, request: Request, session: Session = Depends(get_session)):
+    """A feed row was opened (link or preview): new -> seen, row re-rendered."""
+    listing = session.get(Listing, listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if listing.status == ListingStatus.NEW.value:
+        listing.status = ListingStatus.SEEN.value
+        session.commit()
+        session.refresh(listing)
+    return _feed_row_response(request, session, listing)
 
 
 def _feed_row_response(request: Request, session: Session, listing: Listing):
@@ -864,6 +905,7 @@ def _search_edit_response(
             "exclude_words": search.exclude_words or [],
             "required_words": search.required_words or [],
             "notify_deals_only": bool(search.notify_deals_only),
+            "strict_titles": bool(search.strict_titles),
             "_raw_prices": {
                 field: ("%g" % getattr(search, field)) if getattr(search, field) is not None else ""
                 for field in ("price_min", "price_max", "max_distance_km")
@@ -1100,6 +1142,7 @@ def search_results_partial(request: Request):
     exclude_words = parse_exclude_words(request.query_params.get("exclude") or "")
     required_words = parse_exclude_words(request.query_params.get("require") or "")
     off_topic_notes: dict[str, int] = {}
+    strict = request.query_params.get("strict") in ("1", "on", "true")
     for source in sources:
         name = source.name.value
         try:
@@ -1116,6 +1159,11 @@ def search_results_partial(request: Request):
         if off_topic and not found:
             off_topic_notes[name] = off_topic
         kept = drop_missing_required(drop_excluded(found, exclude_words), required_words)
+        if strict:
+            before_strict = len(kept)
+            kept = drop_off_query(kept, q)
+            if before_strict and not kept:
+                off_topic_notes[name] = before_strict
         in_budget = drop_out_of_price(kept, query.price_min, query.price_max)
         health.record(name, count=len(found), filters_fixed=len(kept) - len(in_budget))
         if in_budget:
@@ -1191,6 +1239,7 @@ async def save_search(request: Request, session: Session = Depends(get_session))
         exclude_words=parse_exclude_words(form.get("exclude_words") or ""),
         required_words=parse_exclude_words(form.get("required_words") or ""),
         sources=[v for v in form.getlist("sources") if v in SOURCE_LABELS],
+        strict_titles=bool(form.get("strict_titles")),
     )
     session.add(search)
     session.commit()

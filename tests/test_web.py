@@ -1292,3 +1292,57 @@ def test_hiding_from_the_feed_can_be_undone(client, db_session):
     assert f'id="feed-{li.id}"' in restored.text and "MacBook Pro" in restored.text
     liked = client.post(f"/partials/listings/{li.id}/status", data={"value": "liked", "from": "feed"})
     assert 'aria-pressed="true"' in liked.text
+
+
+def test_feed_marks_new_listings_and_can_mark_them_all_seen(client, db_session):
+    data = _two_topics_feed(db_session)
+    html = client.get("/").text
+    assert "Tout marquer comme vu" in html and "(2)" in html
+    assert "data-unread" in html
+
+    r = client.post(f"/partials/feed/seen?topic={data['mac'].id}")
+    assert 'id="home-feed"' in r.text
+    db_session.expire_all()
+    assert db_session.get(Listing, data["MacBook Pro"].id).status == "seen"
+    assert db_session.get(Listing, data["PSOne blanche"].id).status == "new"  # other topic
+    assert "(1)" in client.get("/").text
+
+
+def test_opening_a_feed_row_marks_it_seen(client, db_session):
+    data = _two_topics_feed(db_session)
+    li = data["MacBook Pro"]
+    r = client.post(f"/partials/listings/{li.id}/seen")
+    assert "feed-seen" in r.text and "data-unread" not in r.text
+    db_session.expire_all()
+    assert db_session.get(Listing, li.id).status == "seen"
+    liked = client.post(f"/partials/listings/{li.id}/status", data={"value": "liked", "from": "feed"})
+    assert client.post(f"/partials/listings/{li.id}/seen").status_code == 200
+    db_session.expire_all()
+    assert db_session.get(Listing, li.id).status == "liked"  # only new -> seen
+
+
+def test_search_edit_saves_strict_titles(client, db_session):
+    topic, _ = _topic_with_listing(db_session)
+    search = db_session.query(SavedSearch).one()
+    r = client.post(f"/t/switch/searches/{search.id}",
+                    data={"query": "switch oled", "strict_titles": "1"})
+    assert "titres stricts" in r.text
+    db_session.expire_all()
+    assert db_session.get(SavedSearch, search.id).strict_titles is True
+
+
+def test_live_search_strict_titles_drops_loose_matches(monkeypatch):
+    sources = [_Source(Source.EBAY, results=[
+        RawListing(source=Source.EBAY, source_id="1", title="Console PSOne blanche", url="https://x/1"),
+        RawListing(source=Source.EBAY, source_id="2", title="Imprimante Epson", url="https://x/2"),
+    ])]
+    monkeypatch.setattr(web_routes, "get_enabled_sources", lambda: sources)
+
+    def run(qs):
+        request = Request({"type": "http", "method": "GET", "path": "/search/results",
+                           "query_string": qs, "headers": []})
+        return web_routes.search_results_partial(request).body.decode()
+
+    assert "Imprimante Epson" in run(b"q=psone")
+    strict = run(b"q=psone&strict=1")
+    assert "Console PSOne blanche" in strict and "Imprimante Epson" not in strict

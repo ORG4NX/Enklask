@@ -8,9 +8,15 @@
 } %}
 {% set listing = row.listing %}
 {% set liked = listing.status == 'liked' %}
+{% set unread = listing.status == 'new' %}
+{# Opening a new listing (link or preview) marks it seen. #}
 <div id="feed-{{ listing.id }}"
-     class="listing-card {{ 'live-row-new' if fresh else '' }} bg-white rounded-2xl border p-3 flex items-center gap-3 sm:gap-4
-            {{ 'border-brand/40' if liked else 'border-warm-200' }}">
+     {% if unread %}data-unread onclick="feedOpened(event, {{ listing.id }})"{% endif %}
+     class="listing-card relative {{ 'live-row-new' if fresh else '' }} bg-white rounded-2xl border p-3 flex items-center gap-3 sm:gap-4
+            {{ 'border-brand/40' if liked else 'border-warm-200' }}{{ ' feed-seen' if listing.status == 'seen' else '' }}">
+  {% if unread %}
+  <span class="absolute top-2 left-2 w-2 h-2 rounded-full bg-brand" title="Pas encore vue" aria-label="Nouvelle"></span>
+  {% endif %}
 
   <button type="button" onclick="openPreview(this)" title="Aperçu de l'annonce" aria-label="Aperçu de l'annonce"
           class="shrink-0 block w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-warm-100 cursor-zoom-in">

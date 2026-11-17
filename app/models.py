@@ -178,6 +178,11 @@ class SavedSearch(Base):
     exclude_words: Mapped[list] = mapped_column(JSON, default=list)
     # Words or phrases a result's title must all contain to be kept.
     required_words: Mapped[list] = mapped_column(JSON, default=list)
+    # Keep only results whose title contains every word of the query
+    # (filters.matches_query): for sites that pad results with loose matches.
+    strict_titles: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
     # Notify only new listings flagged as deals (see app/deals.py).
     notify_deals_only: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0"

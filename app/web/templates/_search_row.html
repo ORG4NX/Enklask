@@ -28,6 +28,9 @@
     {% if search.exclude_words %}
     <span class="text-[10px] text-gray-400 mt-1 inline-block" title="Résultats écartés quand leur titre contient ces mots">· sans : {{ search.exclude_words | join(', ') }}</span>
     {% endif %}
+    {% if search.strict_titles %}
+    <span class="text-[10px] text-gray-400 mt-1 inline-block" title="Seuls les résultats dont le titre contient tous les mots de la recherche sont gardés">· titres stricts</span>
+    {% endif %}
     {% if search.notify_deals_only %}
     <span class="text-[10px] text-gray-400 mt-1 inline-block" title="Notification seulement pour les annonces sous 60 % du prix médian de la recherche">· 🔔 bonnes affaires seulement</span>
     {% endif %}

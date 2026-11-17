@@ -77,6 +77,13 @@
   </div>
 
   <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+    <input type="checkbox" name="strict_titles" value="1" {% if v.strict_titles %}checked{% endif %}
+           class="mt-0.5 accent-[#E63946]" />
+    <span>Titres stricts
+      <span class="block text-xs text-gray-400">Garde seulement les résultats dont le titre contient tous les mots de la recherche (en français ou en anglais pour les mots de réparation). Pour les sites qui complètent leurs résultats avec du hors-sujet.</span></span>
+  </label>
+
+  <label class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
     <input type="checkbox" name="notify_deals_only" value="1" {% if v.notify_deals_only %}checked{% endif %}
            class="mt-0.5 accent-[#E63946]" />
     <span>Notifier seulement les bonnes affaires 🔥

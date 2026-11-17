@@ -58,6 +58,12 @@
       <input type="text" name="require" aria-label="Mots obligatoires" placeholder="Avec : player"
              title="Garde seulement les annonces dont le titre contient tous ces mots (séparés par des virgules)"
              class="text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 w-36 text-gray-700 font-medium placeholder-gray-400 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
+      <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 bg-warm-50 rounded-xl px-3 py-2 cursor-pointer select-none font-medium
+                    has-[:checked]:bg-brand-light has-[:checked]:text-brand"
+             title="Garde seulement les résultats dont le titre contient tous les mots de la recherche (en français ou en anglais pour les mots de réparation). Pour les sites qui complètent leurs résultats avec du hors-sujet.">
+        <input type="checkbox" name="strict" value="1" class="accent-[#E63946]" />
+        Titres stricts
+      </label>
       <input type="text" name="exclude" aria-label="Mots exclus" placeholder="Sans : wii, gamecube"
              title="Écarte les annonces dont le titre contient un de ces mots (séparés par des virgules)"
              class="text-sm bg-warm-50 border-0 rounded-xl px-3 py-2 w-44 text-gray-700 font-medium placeholder-gray-400 focus:ring-2 focus:ring-brand/20 focus:outline-none" />
@@ -103,6 +109,7 @@
       <input type="hidden" name="required_words" id="save-require" />
       <input type="hidden" name="max_distance_km" id="save-distance" />
       <span id="save-sources" hidden></span>
+      <input type="hidden" name="strict_titles" id="save-strict" />
 
       <label class="flex flex-col gap-1.5">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Nom</span>
@@ -176,6 +183,8 @@ function openSaveModal() {
   document.getElementById('save-exclude').value = liveForm.querySelector('[name="exclude"]').value;
   document.getElementById('save-require').value = liveForm.querySelector('[name="require"]').value;
   document.getElementById('save-distance').value = liveForm.querySelector('[name="max_distance_km"]').value;
+  document.getElementById('save-strict').value =
+    liveForm.querySelector('[name="strict"]').checked ? '1' : '';
   // The ticked sources become the saved search's sources (none = all).
   var saveSources = document.getElementById('save-sources');
   saveSources.innerHTML = '';

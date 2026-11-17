@@ -115,6 +115,12 @@ def _ensure_saved_search_columns() -> None:
                 text("ALTER TABLE saved_searches ADD COLUMN required_words TEXT DEFAULT '[]'")
             )
         logger.info("Added 'required_words' column to saved_searches.")
+    if "strict_titles" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE saved_searches ADD COLUMN strict_titles BOOLEAN DEFAULT 0")
+            )
+        logger.info("Added 'strict_titles' column to saved_searches.")
     if "notify_deals_only" not in columns:
         with engine.begin() as conn:
             conn.execute(
