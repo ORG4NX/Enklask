@@ -96,3 +96,27 @@ def drop_missing_required(raws: list, words: list[str] | None) -> list:
     if not words:
         return list(raws)
     return [raw for raw in raws if missing_required(raw.title, words) is None]
+
+
+def matches_query(title: str, query: str) -> bool:
+    """Every word of ``query`` starts a word of ``title``, or a run of its
+    words glued together.
+
+    For sources whose own search is fuzzy (Easy Cash pads "PSOne" with
+    "Saint Pons" and "Son employée"). Prefix matching keeps plurals and
+    longer forms ("player" -> "players"); gluing makes "gameboy" match
+    "Game Boy". A word inside another word does not count: "psone" is not
+    found in "Epson EcoTank".
+    """
+    words = normalize(title).split()
+    for needle in normalize(query).split():
+        if not any(
+            "".join(words[i:i + 3]).startswith(needle) for i in range(len(words))
+        ):
+            return False
+    return True
+
+
+def drop_off_query(raws: list, query: str) -> list:
+    """``raws`` without the listings whose title misses a word of ``query``."""
+    return [raw for raw in raws if matches_query(raw.title, query)]

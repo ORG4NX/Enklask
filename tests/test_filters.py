@@ -207,3 +207,15 @@ def test_live_search_keeps_only_required_words(monkeypatch):
         "/search/results", params={"q": "gameboy player", "require": "player"},
     ).text
     assert "Game Boy Player" in html and "GameCube violette" not in html
+
+
+def test_matches_query_needs_every_word_at_a_word_start():
+    from app.filters import matches_query
+    assert matches_query("Console SONY PSOne Blanc + 1 manette", "PSOne")
+    assert not matches_query("Imprimante EPSON EcoTank ET-2860", "psone")
+    assert not matches_query("Saint pons de thomieres", "psone")
+    assert not matches_query("Son employée", "psone")
+    assert matches_query("Acc. NINTENDO Game Boy Player", "gameboy player")
+    assert matches_query("Lot de 2 manettes players", "player")
+    assert not matches_query("Jeux Vidéo Gameboy Spirou", "gameboy player")
+    assert matches_query("Console Nintendo New 3DS", "new 3ds")

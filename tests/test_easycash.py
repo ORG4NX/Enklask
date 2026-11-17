@@ -78,4 +78,16 @@ def test_search_sends_the_site_filters(monkeypatch):
     url, params = calls[0]
     assert url == "https://bons-plans.easycash.fr/catalog/search"
     # Condition has no equivalent on the site and is left out.
-    assert params == {"q": "new 3ds", "minPrice": "100", "maxPrice": "199.5", "sort": "recent"}
+    assert params == {"q": "new 3ds", "minPrice": "100", "maxPrice": "199.5"}
+
+
+def test_search_drops_the_loose_matches(monkeypatch):
+    class _Resp:
+        text = PAGE
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(easycash.httpx, "get", lambda url, params=None, **kw: _Resp())
+    assert EasyCashSource().search(SearchQuery("psone")) == []
+    assert len(EasyCashSource().search(SearchQuery("3ds noir"))) == 1

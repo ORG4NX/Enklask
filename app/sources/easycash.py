@@ -25,6 +25,7 @@ import httpx
 
 from ..config import get_settings
 from ..enums import Source
+from ..filters import drop_off_query
 from .base import BaseSource, RawListing, SearchQuery
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,9 @@ _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
 )
 # Our generic sort -> the site's ``sort`` parameter (absent = relevance).
-_SORTS = {"recent": "recent", "price_asc": "asc", "price_desc": "desc"}
+# "recent" is left on relevance: the site's search is fuzzy, and sorted by
+# date its first page is mostly loose matches (books, printers for "PSOne").
+_SORTS = {"price_asc": "asc", "price_desc": "desc"}
 
 _CARD_RE = re.compile(
     r'<li\s+class="clearfix block-link"\s+data-href="(?P<url>[^"]+)"\s+'
@@ -75,7 +78,9 @@ class EasyCashSource(BaseSource):
             follow_redirects=True,
         )
         resp.raise_for_status()
-        return parse_search_page(resp.text)
+        # The site pads its results with loose matches: keep the titles that
+        # really contain every word searched.
+        return drop_off_query(parse_search_page(resp.text), query.query)
 
 
 def parse_search_page(html: str) -> list[RawListing]:
