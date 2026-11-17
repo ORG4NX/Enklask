@@ -2,7 +2,7 @@
 <div class="grid grid-cols-3 gap-2 mb-4">
   <div class="bg-white rounded-2xl border border-warm-200 p-3 text-center">
     <div class="text-xl font-bold text-gray-900">{{ summary.count }}</div>
-    <div class="text-xs text-gray-400">Suivis</div>
+    <div class="text-xs text-gray-400">Suivis{% if summary.gone %} · {{ summary.gone }} hors ligne{% endif %}</div>
   </div>
   <div class="bg-white rounded-2xl border border-warm-200 p-3 text-center">
     <div class="text-xl font-bold {{ 'text-emerald-600' if summary.dropped else 'text-gray-300' }}">{{ summary.dropped }}</div>

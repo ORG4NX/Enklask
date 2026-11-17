@@ -63,6 +63,12 @@ def _ensure_listing_columns() -> None:
                 text("ALTER TABLE listings ADD COLUMN target_alerted BOOLEAN DEFAULT 0")
             )
         logger.info("Added 'target_alerted' column to listings.")
+    if "gone_alerted" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE listings ADD COLUMN gone_alerted BOOLEAN DEFAULT 0")
+            )
+        logger.info("Added 'gone_alerted' column to listings.")
 
 
 def _drop_topic_columns() -> None:

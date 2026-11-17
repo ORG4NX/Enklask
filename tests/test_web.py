@@ -1128,3 +1128,45 @@ def test_dismissed_suggestion_is_not_offered_again(client, db_session):
     db_session.expire_all()
     assert db_session.get(SavedSearch, search.id).ignored_suggestions == ["wii"]
     assert "+ wii" not in client.get("/t/gb/settings").text
+
+
+def test_accepting_a_suggestion_hides_matching_listings_with_undo(client, db_session):
+    import json as _json
+    from app.enums import ListingStatus
+    topic, search = _search_with_hidden(db_session)
+    extra = Listing(source="ebay", source_id="w", title="Wii Fit", url="https://x/w",
+                    price=10.0, status=ListingStatus.NEW.value)
+    liked = Listing(source="ebay", source_id="l", title="Wii collector", url="https://x/l",
+                    price=10.0, status=ListingStatus.LIKED.value)
+    db_session.add_all([extra, liked])
+    db_session.flush()
+    for li in (extra, liked):
+        db_session.add(ListingTopic(listing_id=li.id, topic_id=topic.id, search_id=search.id))
+    db_session.commit()
+
+    r = client.post(f"/t/gb/searches/{search.id}/suggestions/accept", data={"word": "wii"},
+                    headers={"HX-Request": "true"})
+    toast = _json.loads(r.headers["HX-Trigger"])["toast"]
+    assert "1 annonce masquée" in toast["message"]
+    db_session.expire_all()
+    assert db_session.get(Listing, extra.id).status == "hidden"
+    assert db_session.get(Listing, liked.id).status == "liked"  # followed: untouched
+
+    action = toast["action"]
+    client.post(action["url"], data=action["values"])
+    db_session.expire_all()
+    assert db_session.get(Listing, extra.id).status == "new"
+    assert db_session.get(SavedSearch, search.id).exclude_words == ["wii"]
+
+
+def test_gone_followed_listing_stays_on_the_watch_page(client, db_session):
+    from app.enums import ListingStatus
+    topic, listing = _topic_with_listing(db_session)
+    listing.status = ListingStatus.LIKED.value
+    for link in listing.topic_links:
+        link.is_available = False
+    db_session.commit()
+    html = client.get("/liked").text
+    assert "Switch OLED" in html
+    assert "Plus en ligne" in html
+    assert "1 hors ligne" in html

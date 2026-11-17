@@ -8,7 +8,7 @@
 } %}
 {% set listing = row.listing %}
 <div id="watch-{{ listing.id }}"
-     class="listing-card bg-white rounded-2xl border border-warm-200 p-3 flex items-center gap-3 sm:gap-4">
+     class="listing-card bg-white rounded-2xl border border-warm-200 p-3 flex items-center gap-3 sm:gap-4{% if row.gone %} opacity-60{% endif %}">
 
   <button type="button" onclick="openPreview(this)" title="Aperçu de l'annonce" aria-label="Aperçu de l'annonce"
           class="shrink-0 block w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-warm-100 cursor-zoom-in">
@@ -26,6 +26,10 @@
        class="block text-sm text-gray-700 line-clamp-1 hover:text-brand transition-colors">{{ listing.title }}</a>
     <div class="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5 min-w-0">
       <span class="px-1.5 py-0.5 rounded font-semibold shrink-0 {{ source_styles.get(listing.source, 'bg-gray-50 text-gray-600') }}">{{ listing.source | source_label }}</span>
+      {% if row.gone %}
+      <span class="shrink-0 rounded-full px-2 py-0.5 font-semibold bg-gray-100 text-gray-600"
+            title="N'apparaît plus dans les résultats de ses recherches depuis {{ listing.last_seen | timeago }} : vendue ou retirée">Plus en ligne</span>
+      {% endif %}
       <span class="truncate" title="Première détection par Enklask">&middot; repérée {{ listing.first_seen | timeago }}</span>
     </div>
     <div class="mt-1 hidden sm:block">{{ ui.ebay_meta(listing.shipping_cost, listing.buying_format, listing.currency) }}</div>

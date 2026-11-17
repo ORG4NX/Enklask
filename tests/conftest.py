@@ -9,6 +9,7 @@ def _no_price_target_check(monkeypatch):
     """
     monkeypatch.setattr("app.poller.check_price_targets", lambda: 0)
     monkeypatch.setattr("app.livefeed.check_price_targets", lambda: 0)
+    monkeypatch.setattr("app.poller.check_gone_listings", lambda: 0)
 
 
 @pytest.fixture(autouse=True)

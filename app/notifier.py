@@ -225,6 +225,26 @@ class Notifier:
             ) or sent
         return sent
 
+    def notify_gone(self, item: NotifyItem) -> bool:
+        """A followed listing is no longer online (sold or withdrawn)."""
+        if not self.enabled:
+            return False
+        sent = False
+        if self._discord:
+            embed = self.build_embed(item)
+            embed["title"] = f"🚫 Plus en ligne — {item.title}"[:256]
+            embed["color"] = 0x6B7280  # gray: nothing to act on, just news
+            for target_hook in self._discord:
+                sent = self._post_discord(target_hook, embed) or sent
+        if self._other:
+            title, body = self.format_listing(item)
+            sent = self._send(
+                f"🚫 Annonce suivie plus en ligne · {title}",
+                "Elle n'apparaît plus dans les résultats : vendue ou retirée.\n" + body,
+                urls=self._other,
+            ) or sent
+        return sent
+
     def send_test(self, topic_name: str = "") -> bool:
         ok = False
         if self._discord:

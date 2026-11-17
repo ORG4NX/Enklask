@@ -125,6 +125,11 @@ class Listing(Base):
     # Price alert on a followed listing: notify once when the price reaches
     # target_price or less; target_alerted re-arms when it goes back above.
     target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Followed listing no longer returned by any of its searches (sold or
+    # withdrawn): notified once, re-armed if it shows up again.
+    gone_alerted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
     target_alerted: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0"
     )

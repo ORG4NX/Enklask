@@ -23,10 +23,11 @@ from ..db import get_session
 from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
 from .. import health
-from ..price_alerts import target_reached
+from ..price_alerts import listing_gone, target_reached
 from ..suggestions import suggest_exclusions
 from ..filters import (
-    drop_excluded, drop_missing_required, drop_out_of_price, parse_exclude_words,
+    drop_excluded, drop_missing_required, drop_out_of_price, excluded_by,
+    parse_exclude_words,
 )
 from ..livefeed import live_feed
 from ..models import Listing, ListingTopic, SavedSearch, Topic, _slugify
@@ -765,15 +766,79 @@ def accept_suggestion(
     slug: str, search_id: int, request: Request,
     word: str = Form(""), session: Session = Depends(get_session),
 ):
-    """Add a suggested word to the search's excluded words."""
+    """Add a suggested word to the search's excluded words, and hide the
+    listings of this search already shown that contain it (new or seen ones;
+    followed listings are left alone). The toast offers to undo the hiding."""
     topic, search = _topic_search(session, slug, search_id)
     word = word.strip()
+    hidden: dict[str, list[int]] = {"new": [], "seen": []}
     if word:
         merged = parse_exclude_words(", ".join([*(search.exclude_words or []), word]))
         if merged != list(search.exclude_words or []):
             search.exclude_words = merged
-            session.commit()
-    return _search_row_response(request, session, topic, search_id)
+        listings = session.scalars(
+            select(Listing)
+            .join(ListingTopic, ListingTopic.listing_id == Listing.id)
+            .where(
+                ListingTopic.search_id == search.id,
+                Listing.status.in_([ListingStatus.NEW.value, ListingStatus.SEEN.value]),
+            )
+        )
+        for listing in listings:
+            if excluded_by(listing.title, [word]):
+                hidden[listing.status].append(listing.id)
+                listing.status = ListingStatus.HIDDEN.value
+        session.commit()
+    response = _search_row_response(request, session, topic, search_id)
+    n = len(hidden["new"]) + len(hidden["seen"])
+    toast = {"message": f"« {word} » exclu", "level": "ok"}
+    if n:
+        toast = {
+            "message": f"« {word} » exclu · {n} annonce{'s' if n > 1 else ''} masquée{'s' if n > 1 else ''}",
+            "level": "muted",
+            "action": {
+                "label": "Annuler",
+                "url": f"/t/{slug}/searches/{search_id}/suggestions/unhide",
+                "values": {k: ",".join(map(str, v)) for k, v in hidden.items()},
+            },
+        }
+    if word:
+        _merge_trigger(response, "toast", toast)
+    return response
+
+
+@router.post("/t/{slug}/searches/{search_id}/suggestions/unhide")
+def unhide_excluded(
+    slug: str, search_id: int,
+    new: str = Form(""), seen: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Undo the hiding done when a suggested word was accepted (the word stays
+    excluded). Only listings still hidden are put back."""
+    _topic_search(session, slug, search_id)
+    for status, raw in ((ListingStatus.NEW, new), (ListingStatus.SEEN, seen)):
+        ids = [int(x) for x in raw.split(",") if x.strip().isdigit()][:1000]
+        if ids:
+            session.execute(
+                update(Listing)
+                .where(Listing.id.in_(ids), Listing.status == ListingStatus.HIDDEN.value)
+                .values(status=status.value)
+            )
+    session.commit()
+    return HTMLResponse("")
+
+
+def _merge_trigger(response, event: str, detail) -> None:
+    """Add an htmx event to the response's HX-Trigger header, keeping any
+    event already there."""
+    try:
+        events = json.loads(response.headers.get("HX-Trigger") or "{}")
+    except ValueError:
+        events = {}
+    if not isinstance(events, dict):
+        events = {}
+    events[event] = detail
+    response.headers["HX-Trigger"] = json.dumps(events)
 
 
 @router.post("/t/{slug}/searches/{search_id}/suggestions/dismiss", response_class=HTMLResponse)
@@ -1345,6 +1410,7 @@ def _watch_row(listing: Listing) -> dict:
         points, last_x, last_y = _sparkline_points(pts)
     direction = "down" if delta < 0 else ("up" if delta > 0 else "flat")
     return {
+        "gone": listing_gone(listing),
         "target": listing.target_price, "target_hit": target_reached(listing),
         "listing": listing, "cur": cur, "first": first, "delta": delta, "pct": pct,
         "lo": lo, "hi": hi, "moved": moved, "direction": direction,
@@ -1361,7 +1427,9 @@ def _last_move_at(listing: Listing) -> str:
 
 def _watch_rows(session: Session, sort: str | None) -> tuple[list[dict], dict, str]:
     listings = _query_listings(
-        session, status=ListingStatus.LIKED.value, limit=500, offset=0
+        session, status=ListingStatus.LIKED.value, limit=500, offset=0,
+        # Followed listings stay in the list once gone, marked "plus en ligne".
+        available_only=False,
     )
     rows = [_watch_row(li) for li in listings]
     sort = sort if sort in LIKED_SORT_LABELS else "price_drop"
@@ -1376,6 +1444,7 @@ def _watch_rows(session: Session, sort: str | None) -> tuple[list[dict], dict, s
     summary = {
         "count": len(rows),
         "dropped": sum(1 for r in rows if r["delta"] < 0),
+        "gone": sum(1 for r in rows if r["gone"]),
         "savings": sum(-r["delta"] for r in rows if r["delta"] < 0),
         "any_moved": any(r["moved"] for r in rows),
     }

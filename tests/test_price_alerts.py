@@ -115,3 +115,42 @@ def test_migration_adds_the_target_columns(monkeypatch):
     assert {"target_price", "target_alerted"} <= columns
     with engine.connect() as conn:
         assert conn.execute(text("SELECT target_alerted FROM listings")).scalar() == 0
+
+
+def _set_available(factory, listing_id, available):
+    with factory() as session:
+        for link in session.query(ListingTopic).filter_by(listing_id=listing_id):
+            link.is_available = available
+        session.commit()
+
+
+def test_gone_followed_listing_alerts_once_then_rearms(factory, monkeypatch):
+    gone = []
+
+    class FakeNotifier:
+        def notify_gone(self, item):
+            gone.append(item.title)
+            return True
+
+    monkeypatch.setattr(price_alerts.Notifier, "for_topic", lambda urls: FakeNotifier())
+    with factory() as session:
+        listing_id = _followed(session, price=80.0, target=None).id
+
+    assert price_alerts.check_gone_listings() == 0  # still online
+    _set_available(factory, listing_id, False)
+    assert price_alerts.check_gone_listings() == 1
+    assert gone == ["Game Boy Player"]
+    assert price_alerts.check_gone_listings() == 0  # not twice
+    _set_available(factory, listing_id, True)
+    assert price_alerts.check_gone_listings() == 0  # back: re-armed
+    _set_available(factory, listing_id, False)
+    assert price_alerts.check_gone_listings() == 1
+
+
+def test_gone_check_ignores_listings_not_followed(factory, monkeypatch):
+    monkeypatch.setattr(price_alerts.Notifier, "for_topic", lambda urls: pytest.fail("no alert"))
+    with factory() as session:
+        listing_id = _followed(session, price=80.0, target=None,
+                               status=ListingStatus.SEEN.value).id
+    _set_available(factory, listing_id, False)
+    assert price_alerts.check_gone_listings() == 0

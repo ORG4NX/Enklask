@@ -32,6 +32,52 @@ def target_reached(listing: Listing) -> bool:
     )
 
 
+def listing_gone(listing: Listing) -> bool:
+    """No search returns ``listing`` any more: every topic link is marked
+    unavailable (the poller does that after it misses the ad twice)."""
+    links = listing.topic_links
+    return bool(links) and not any(link.is_available for link in links)
+
+
+def check_gone_listings() -> int:
+    """Notify the followed listings that just went offline (sold or
+    withdrawn). Once per disappearance; re-armed if the ad comes back.
+    Returns how many alerts were sent. Never raises."""
+    try:
+        pending = _collect_gone()
+    except Exception:  # noqa: BLE001
+        logger.exception("Gone-listing check failed")
+        return 0
+    sent = 0
+    for item, urls in pending:
+        try:
+            if Notifier.for_topic(urls).notify_gone(item):
+                sent += 1
+        except Exception:  # noqa: BLE001
+            logger.exception("Gone-listing alert failed for '%s'", item.title)
+    return sent
+
+
+def _collect_gone() -> list[tuple[NotifyItem, list[str]]]:
+    pending: list[tuple[NotifyItem, list[str]]] = []
+    with write_lock, session_scope() as session:
+        listings = session.scalars(
+            select(Listing).where(Listing.status == ListingStatus.LIKED.value)
+        )
+        for listing in listings:
+            gone = listing_gone(listing)
+            if gone and not listing.gone_alerted:
+                listing.gone_alerted = True
+                topic = listing.topic_links[0].topic
+                pending.append((
+                    NotifyItem.from_listing(listing, topic_name=topic.name if topic else ""),
+                    topic.apprise_url_list if topic else [],
+                ))
+            elif not gone and listing.gone_alerted:
+                listing.gone_alerted = False  # back online: re-arm
+    return pending
+
+
 def check_price_targets() -> int:
     """Notify the followed listings that just reached their target price.
 

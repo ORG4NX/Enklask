@@ -92,14 +92,18 @@ def _query_listings(
     sort: str | None = None,
     limit: int,
     offset: int,
+    available_only: bool = True,
 ) -> list[Listing]:
     if topic_id is not None:
         stmt = (
             select(Listing)
             .join(ListingTopic, ListingTopic.listing_id == Listing.id)
             .where(ListingTopic.topic_id == topic_id)
-            .where(ListingTopic.is_available.is_(True))
         )
+        if available_only:
+            stmt = stmt.where(ListingTopic.is_available.is_(True))
+    elif not available_only:
+        stmt = select(Listing)
     else:
         stmt = select(Listing).where(
             exists().where(
