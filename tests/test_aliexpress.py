@@ -129,3 +129,9 @@ def test_a_captcha_pauses_the_source(source):
         AliExpressSource().search(SearchQuery("gba"))
     assert len(source.calls) == 1  # the paused search did not reach the site
     aliexpress.reset_cooldown()
+
+
+def test_search_counts_the_off_topic_results(source):
+    src = AliExpressSource()
+    assert src.search(SearchQuery("psone")) == []
+    assert src.last_off_topic == 3

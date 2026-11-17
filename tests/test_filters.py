@@ -219,3 +219,13 @@ def test_matches_query_needs_every_word_at_a_word_start():
     assert matches_query("Lot de 2 manettes players", "player")
     assert not matches_query("Jeux Vidéo Gameboy Spirou", "gameboy player")
     assert matches_query("Console Nintendo New 3DS", "new 3ds")
+
+
+def test_matches_query_finds_repair_words_in_either_language():
+    from app.filters import matches_query
+    assert matches_query("Écran LCD IPS pour PSOne, kit de remplacement", "PSOne screen")
+    assert matches_query("Coque de remplacement complète pour GBA SP", "gba shell")
+    assert matches_query("Replacement shell for GBA SP", "coque gba")
+    assert matches_query("Batterie 2000mAh pour PSP 3000", "psp battery")
+    assert not matches_query("Coque de remplacement pour GBA SP", "psone shell")
+    assert not matches_query("Imprimante 3D ELEGOO Saturn 4", "saturn lecteur")

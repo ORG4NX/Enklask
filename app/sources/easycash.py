@@ -48,6 +48,7 @@ _IMAGE_RE = re.compile(r"https://cdn\.easycash\.fr/img/prod/[0-9/]+/src/[^\s?\"'
 
 class EasyCashSource(BaseSource):
     name = Source.EASYCASH
+    last_off_topic = 0  # results of the last search dropped as off-topic
 
     def __init__(self) -> None:
         self._settings = get_settings()
@@ -80,7 +81,10 @@ class EasyCashSource(BaseSource):
         resp.raise_for_status()
         # The site pads its results with loose matches: keep the titles that
         # really contain every word searched.
-        return drop_off_query(parse_search_page(resp.text), query.query)
+        raws = parse_search_page(resp.text)
+        kept = drop_off_query(raws, query.query)
+        self.last_off_topic = len(raws) - len(kept)
+        return kept
 
 
 def parse_search_page(html: str) -> list[RawListing]:

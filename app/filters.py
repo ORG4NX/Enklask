@@ -98,6 +98,58 @@ def drop_missing_required(raws: list, words: list[str] | None) -> list:
     return [raw for raw in raws if missing_required(raw.title, words) is None]
 
 
+# English <-> French words of console repair and modding. AliExpress
+# machine-translates titles to the visitor's language ("screen" becomes
+# "écran"), so a search typed in English must still find French titles, and
+# the other way round. Accent-free, as compared after normalize().
+_SYNONYM_GROUPS = (
+    ("screen", "ecran", "display", "affichage"),
+    ("lcd", "ecran"),
+    ("shell", "coque", "housing", "boitier"),
+    ("case", "coque", "boitier", "etui"),
+    ("battery", "batterie", "pile"),
+    ("button", "bouton", "buttons", "boutons"),
+    ("cable", "cables", "nappe"),
+    ("ribbon", "nappe"),
+    ("flex", "nappe"),
+    ("charger", "chargeur"),
+    ("speaker", "haut", "enceinte"),
+    ("lens", "lentille", "vitre"),
+    ("glass", "verre", "vitre"),
+    ("replacement", "remplacement", "rechange"),
+    ("spare", "rechange"),
+    ("parts", "pieces", "piece"),
+    ("controller", "manette"),
+    ("gamepad", "manette"),
+    ("drive", "lecteur"),
+    ("laser", "lentille"),
+    ("board", "carte"),
+    ("motherboard", "carte"),
+    ("chip", "puce"),
+    ("power", "alimentation"),
+    ("supply", "alimentation"),
+    ("fan", "ventilateur"),
+    ("cover", "couvercle", "cache"),
+    ("lid", "couvercle"),
+    ("sticker", "autocollant", "etiquette"),
+    ("label", "etiquette"),
+    ("screws", "vis"),
+    ("screw", "vis"),
+    ("tool", "outil", "outils"),
+    ("kit", "kits"),
+    ("memory", "memoire"),
+    ("card", "carte"),
+    ("console", "consoles"),
+    ("game", "jeu", "jeux"),
+    ("backlight", "retroeclairage"),
+    ("mod", "modification"),
+)
+_SYNONYMS: dict[str, set[str]] = {}
+for _group in _SYNONYM_GROUPS:
+    for _word in _group:
+        _SYNONYMS.setdefault(_word, set()).update(_group)
+
+
 def matches_query(title: str, query: str) -> bool:
     """Every word of ``query`` starts a word of ``title``, or a run of its
     words glued together.
@@ -106,13 +158,14 @@ def matches_query(title: str, query: str) -> bool:
     "Saint Pons" and "Son employée"). Prefix matching keeps plurals and
     longer forms ("player" -> "players"); gluing makes "gameboy" match
     "Game Boy". A word inside another word does not count: "psone" is not
-    found in "Epson EcoTank".
+    found in "Epson EcoTank". A repair word may be found under its English
+    or French form ("screen" finds "écran", see _SYNONYM_GROUPS).
     """
     words = normalize(title).split()
+    starts = ["".join(words[i:i + 3]) for i in range(len(words))]
     for needle in normalize(query).split():
-        if not any(
-            "".join(words[i:i + 3]).startswith(needle) for i in range(len(words))
-        ):
+        forms = _SYNONYMS.get(needle, {needle}) | {needle}
+        if not any(start.startswith(form) for start in starts for form in forms):
             return False
     return True
 

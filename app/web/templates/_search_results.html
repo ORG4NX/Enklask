@@ -10,6 +10,16 @@
 </div>
 {% endif %}
 
+{% if off_topic %}
+<div class="mb-4 rounded-xl border border-warm-200 bg-warm-100 px-4 py-3 text-xs text-gray-600">
+  {% for source, n in off_topic.items() %}
+  <p><span class="font-semibold">{{ source | source_label }}</span> a renvoyé {{ n }} résultat{{ 's' if n != 1 else '' }},
+    tous écartés : leur titre ne contient pas tous les mots de ta recherche.
+    {% if source == 'aliexpress' %}Les titres AliExpress sont traduits en français : essaie avec les mots français (« écran » plutôt que « screen »).{% endif %}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if results %}
 {% set source_styles = {
   "ebay": "bg-blue-50 text-blue-600",

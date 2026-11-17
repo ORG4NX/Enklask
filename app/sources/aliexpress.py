@@ -57,6 +57,7 @@ class AliExpressBlocked(RuntimeError):
 class AliExpressSource(BaseSource):
     name = Source.ALIEXPRESS
     opt_in = True  # parts catalogue: only for searches that tick it
+    last_off_topic = 0  # results of the last search dropped as off-topic
 
     def __init__(self) -> None:
         self._settings = get_settings()
@@ -102,7 +103,12 @@ class AliExpressSource(BaseSource):
         if _ITEMS_KEY not in html and _BLOCKED_RE.search(html):
             _start_cooldown()
             raise AliExpressBlocked("AliExpress captcha (punish page)")
-        return drop_off_query(parse_search_page(html, self._base), query.query)
+        raws = parse_search_page(html, self._base)
+        kept = drop_off_query(raws, query.query)
+        # Shown by the instant search, so an all-filtered page does not look
+        # like a site with nothing to sell.
+        self.last_off_topic = len(raws) - len(kept)
+        return kept
 
 
 def _start_cooldown() -> None:

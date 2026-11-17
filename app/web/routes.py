@@ -1099,6 +1099,7 @@ def search_results_partial(request: Request):
     errors: dict[str, str] = {}
     exclude_words = parse_exclude_words(request.query_params.get("exclude") or "")
     required_words = parse_exclude_words(request.query_params.get("require") or "")
+    off_topic_notes: dict[str, int] = {}
     for source in sources:
         name = source.name.value
         try:
@@ -1111,6 +1112,9 @@ def search_results_partial(request: Request):
         # Some sources silently drop part of the query (Easy Cash loses the
         # price range when it redirects to a category page), so the budget
         # and the excluded/required words are re-checked on every result.
+        off_topic = getattr(source, "last_off_topic", 0)
+        if off_topic and not found:
+            off_topic_notes[name] = off_topic
         kept = drop_missing_required(drop_excluded(found, exclude_words), required_words)
         in_budget = drop_out_of_price(kept, query.price_min, query.price_max)
         health.record(name, count=len(found), filters_fixed=len(kept) - len(in_budget))
@@ -1139,6 +1143,7 @@ def search_results_partial(request: Request):
         "request": request,
         "results": results,
         "errors": errors,
+        "off_topic": off_topic_notes,
         "q": q,
         "has_distance": has_distance,
     })
