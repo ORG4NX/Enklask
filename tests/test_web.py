@@ -1170,3 +1170,21 @@ def test_gone_followed_listing_stays_on_the_watch_page(client, db_session):
     assert "Switch OLED" in html
     assert "Plus en ligne" in html
     assert "1 hors ligne" in html
+
+
+def test_topic_grid_shows_the_deal_badge(client, db_session):
+    topic = Topic(name="Deals", slug="deals")
+    db_session.add(topic)
+    db_session.flush()
+    search = SavedSearch(topic_id=topic.id, name="player", query="gameboy player")
+    db_session.add(search)
+    db_session.flush()
+    for i, price in enumerate([100.0] * 8 + [60.0]):
+        li = Listing(source="ebay", source_id=f"d{i}", title=f"GB {i}", url=f"https://x/d{i}",
+                     price=price)
+        db_session.add(li)
+        db_session.flush()
+        db_session.add(ListingTopic(listing_id=li.id, topic_id=topic.id, search_id=search.id))
+    db_session.commit()
+    html = client.get("/t/deals").text
+    assert html.count("🔥 −40 %") == 1

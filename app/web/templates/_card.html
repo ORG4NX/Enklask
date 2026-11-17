@@ -49,6 +49,13 @@
     <div class="flex items-center gap-1.5">
       <span class="text-lg font-bold text-gray-900">{{ "%.0f"|format(listing.price) }}&nbsp;{{ listing.currency }}</span>
       {{ ui.price_change_badge(listing.price, listing.currency, listing.price_history or []) }}
+      {% if listing.deal is defined and listing.deal %}
+      {# Well under the median price of the search that found it (app/deals.py). #}
+      <span class="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 whitespace-nowrap"
+            title="Bonne affaire : {{ listing.deal.pct }} % sous le prix médian de la recherche{% if listing.deal.search %} « {{ listing.deal.search }} »{% endif %} ({{ '%.0f'|format(listing.deal.median) }} {{ listing.currency }}, sur {{ listing.deal.samples }} annonces)">
+        🔥 −{{ listing.deal.pct }} %
+      </span>
+      {% endif %}
     </div>
     {% endif %}
     {{ ui.ebay_meta(listing.shipping_cost, listing.buying_format, listing.currency) }}

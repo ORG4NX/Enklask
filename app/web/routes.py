@@ -23,6 +23,7 @@ from ..db import get_session
 from ..enums import ListingStatus, Source
 from ..jobs import ALL_KEY, Job, jobs, search_key, topic_key
 from .. import health
+from ..deals import annotate_deals
 from ..price_alerts import listing_gone, target_reached
 from ..suggestions import suggest_exclusions
 from ..filters import (
@@ -347,6 +348,7 @@ def _listings_page(
     )
     has_more = len(rows) > _PAGE_SIZE
     rows = rows[:_PAGE_SIZE]
+    annotate_deals(session, rows, topic_id)
 
     params: list[tuple[str, str]] = []
     if topic_id is not None:
@@ -1155,10 +1157,11 @@ def update_status(
                 "toast": {"message": "Annonce masquée", "level": "muted", "action": undo},
             })},
         )
-    return _card_response(request, listing, since)
+    return _card_response(request, session, listing, since)
 
 
-def _card_response(request: Request, listing: Listing, since: str):
+def _card_response(request: Request, session: Session, listing: Listing, since: str):
+    annotate_deals(session, [listing])
     return templates.TemplateResponse(
         "_card.html",
         {"request": request, "listing": listing, "new_since": _since_from(since)},
@@ -1188,7 +1191,7 @@ def restore_listing(
         listing.status = previous.value
         session.commit()
         session.refresh(listing)
-    return _card_response(request, listing, since)
+    return _card_response(request, session, listing, since)
 
 
 # ---------------------------------------------------------------------------
